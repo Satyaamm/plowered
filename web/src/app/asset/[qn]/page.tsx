@@ -14,6 +14,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { api } from "@/lib/api";
+import { LineageGraph } from "@/components/lineage-graph";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "24px" },
@@ -27,10 +28,6 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
   },
   tags: { display: "flex", flexWrap: "wrap", gap: "6px" },
-  lineageItem: {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    color: tokens.colorNeutralForeground2,
-  },
 });
 
 export default function AssetPage({ params }: { params: Promise<{ qn: string }> }) {
@@ -44,8 +41,8 @@ export default function AssetPage({ params }: { params: Promise<{ qn: string }> 
   });
 
   const lineage = useQuery({
-    queryKey: ["lineage", asset.data?.id, "upstream"],
-    queryFn: () => api.lineage(asset.data!.id, "upstream", 1),
+    queryKey: ["lineage", asset.data?.id, "both"],
+    queryFn: () => api.lineage(asset.data!.id, "both", 1),
     enabled: !!asset.data?.id,
   });
 
@@ -90,18 +87,10 @@ export default function AssetPage({ params }: { params: Promise<{ qn: string }> 
       <Divider />
 
       <section>
-        <Subtitle2>Upstream lineage</Subtitle2>
+        <Subtitle2>Lineage</Subtitle2>
         {lineage.isLoading && <Spinner size="tiny" />}
-        {lineage.data && lineage.data.edges.length === 0 && <Body1>No upstream edges.</Body1>}
-        {lineage.data && lineage.data.edges.length > 0 && (
-          <ul style={{ paddingLeft: 0, listStyle: "none" }}>
-            {lineage.data.edges.map((e) => (
-              <li key={e.id} className={styles.lineageItem}>
-                ← {e.source_id}
-              </li>
-            ))}
-          </ul>
-        )}
+        {lineage.error && <Body1>{(lineage.error as Error).message}</Body1>}
+        {lineage.data && <LineageGraph data={lineage.data} />}
       </section>
     </div>
   );

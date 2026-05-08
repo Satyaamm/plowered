@@ -53,9 +53,10 @@ export interface LineageEdgeView {
 
 export interface LineageResponse {
   root: Asset;
-  direction: "upstream" | "downstream";
+  direction: "upstream" | "downstream" | "both";
   depth: number;
   edges: LineageEdgeView[];
+  neighbors: Asset[];
   truncated?: boolean;
 }
 
