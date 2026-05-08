@@ -2,6 +2,9 @@ module github.com/Satyaamm/plowered
 
 go 1.23
 
-// Dependencies added per milestone — run `go mod tidy` after first build to
-// populate go.sum. M1 needs only the standard library + uuid (added when
-// proto codegen lands). Heavier deps (pgx, jwt, grpc) come with M1+M2.
+require (
+	github.com/jackc/pgx/v5 v5.7.2
+)
+
+// `go mod tidy` will populate transitive deps and create go.sum on first build.
+// M2+ adds: gRPC, grpc-gateway, protovalidate, JWT, NATS, Bleve.
