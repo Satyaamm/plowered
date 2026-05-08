@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "generated_at": "2026-05-08T12:00:00Z",
+    "project_name": "demo",
+    "adapter_type": "ansi"
+  },
+  "nodes": {
+    "source.demo.raw.orders": {
+      "unique_id": "source.demo.raw.orders",
+      "name": "orders",
+      "database": "prod",
+      "schema": "raw",
+      "resource_type": "source",
+      "depends_on": {"nodes": []}
+    },
+    "source.demo.raw.customers": {
+      "unique_id": "source.demo.raw.customers",
+      "name": "customers",
+      "database": "prod",
+      "schema": "raw",
+      "resource_type": "source",
+      "depends_on": {"nodes": []}
+    },
+    "model.demo.daily_orders": {
+      "unique_id": "model.demo.daily_orders",
+      "name": "daily_orders",
+      "database": "prod",
+      "schema": "mart",
+      "resource_type": "model",
+      "description": "Daily aggregated orders.",
+      "tags": ["mart", "daily"],
+      "depends_on": {"nodes": ["source.demo.raw.orders"]},
+      "raw_sql": "SELECT date, SUM(amount) FROM {{ source('raw', 'orders') }} GROUP BY date"
+    },
+    "model.demo.customer_summary": {
+      "unique_id": "model.demo.customer_summary",
+      "name": "customer_summary",
+      "database": "prod",
+      "schema": "mart",
+      "resource_type": "model",
+      "depends_on": {
+        "nodes": [
+          "source.demo.raw.customers",
+          "model.demo.daily_orders"
+        ]
+      },
+      "raw_sql": "SELECT c.id, c.name, sum(o.total) FROM customers c JOIN daily_orders o USING(customer_id) GROUP BY 1,2"
+    },
+    "test.demo.unique_customer_id": {
+      "unique_id": "test.demo.unique_customer_id",
+      "name": "unique_customer_id",
+      "database": "prod",
+      "schema": "mart",
+      "resource_type": "test",
+      "depends_on": {"nodes": ["model.demo.customer_summary"]}
+    }
+  }
+}
