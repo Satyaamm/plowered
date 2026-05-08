@@ -76,7 +76,7 @@ export const api = {
       type: opts?.type,
     }),
 
-  lineage: (id: string, direction: "upstream" | "downstream" = "upstream", depth = 1) =>
+  lineage: (id: string, direction: "upstream" | "downstream" | "both" = "both", depth = 1) =>
     request<LineageResponse>(
       "GET",
       `/v1/assets/${encodeURIComponent(id)}/lineage?direction=${direction}&depth=${depth}`,
