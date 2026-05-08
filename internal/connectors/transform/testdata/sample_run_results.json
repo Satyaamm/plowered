@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "generated_at": "2026-05-08T12:01:00Z",
+    "project_name": "demo"
+  },
+  "results": [
+    {
+      "unique_id": "model.demo.daily_orders",
+      "status": "success",
+      "execution_time": 2.34,
+      "completed_at": "2026-05-08T12:00:30Z"
+    },
+    {
+      "unique_id": "model.demo.customer_summary",
+      "status": "error",
+      "execution_time": 0.5,
+      "completed_at": "2026-05-08T12:00:45Z",
+      "message": "compilation error in SQL"
+    }
+  ]
+}
