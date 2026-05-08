@@ -1,33 +1,58 @@
+"use client";
+
 import Link from "next/link";
+import {
+  Card,
+  CardHeader,
+  Body1,
+  Caption1,
+  Badge,
+  makeStyles,
+  tokens,
+} from "@fluentui/react-components";
 import type { Asset } from "@/lib/types";
 
+const useStyles = makeStyles({
+  link: { display: "block", textDecoration: "none" },
+  card: {
+    "&:hover": {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      cursor: "pointer",
+    },
+  },
+  qn: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200,
+  },
+  body: { marginTop: "4px" },
+  desc: { color: tokens.colorNeutralForeground2, marginTop: "8px" },
+  tags: { display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "12px" },
+});
+
 export function AssetCard({ asset }: { asset: Asset }) {
+  const styles = useStyles();
   return (
-    <Link
-      href={`/asset/${encodeURIComponent(asset.qualified_name)}`}
-      className="block rounded-md border border-ink-200 bg-white p-4 hover:border-ink-400"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="font-mono text-sm text-ink-600">{asset.qualified_name}</div>
-          <div className="mt-1 text-base font-medium text-ink-900">{asset.name}</div>
-          {asset.description && (
-            <p className="mt-2 text-sm text-ink-600">{asset.description}</p>
-          )}
-        </div>
-        <span className="rounded bg-ink-100 px-2 py-1 text-xs uppercase tracking-wide text-ink-600">
-          {asset.type || "asset"}
-        </span>
-      </div>
-      {asset.tags && asset.tags.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {asset.tags.map((t) => (
-            <span key={t} className="rounded-full border border-ink-200 px-2 py-0.5 text-xs text-ink-600">
-              {t}
-            </span>
-          ))}
-        </div>
-      )}
+    <Link href={`/asset/${encodeURIComponent(asset.qualified_name)}`} className={styles.link}>
+      <Card className={styles.card}>
+        <CardHeader
+          header={
+            <div>
+              <Caption1 className={styles.qn}>{asset.qualified_name}</Caption1>
+              <Body1 className={styles.body}>{asset.name}</Body1>
+            </div>
+          }
+          action={<Badge appearance="outline">{asset.type || "asset"}</Badge>}
+        />
+        {asset.description && <Body1 className={styles.desc}>{asset.description}</Body1>}
+        {asset.tags && asset.tags.length > 0 && (
+          <div className={styles.tags}>
+            {asset.tags.map((t) => (
+              <Badge key={t} appearance="tint" color="brand">{t}</Badge>
+            ))}
+          </div>
+        )}
+      </Card>
     </Link>
   );
 }

@@ -1,24 +1,37 @@
-.PHONY: help proto build test lint clean dev migrate docker-up docker-down web-dev fmt
+.PHONY: help env proto build test lint clean dev migrate docker-up docker-down web-dev web-install fmt
 
-GO         ?= go
-BUF        ?= buf
-BIN_DIR    ?= bin
-MODULE     := github.com/Satyaamm/plowered
+GO        ?= go
+BUF       ?= buf
+NPM       ?= npm
+BIN_DIR   ?= bin
+MODULE    := github.com/Satyaamm/plowered
+ENV_FILE  ?= .env
+
+# Load .env into make's environment when it exists, so targets see the same
+# values as the running binary.
+-include $(ENV_FILE)
+export
 
 help:
 	@echo "Plowered dev targets:"
-	@echo "  make proto       Generate Go code from .proto files (requires buf)"
-	@echo "  make build       Build all binaries into ./bin"
-	@echo "  make test        Run unit tests"
-	@echo "  make lint        Lint Go + proto"
-	@echo "  make fmt         Format Go + proto"
-	@echo "  make dev         Run plowered server with reload (requires air)"
-	@echo "  make docker-up   Start local dev stack (postgres, nats, meilisearch)"
-	@echo "  make docker-down Stop local dev stack"
-	@echo "  make migrate         Apply DB migrations"
+	@echo "  make env             Bootstrap .env from .env.example if missing"
+	@echo "  make proto           Generate Go code from .proto files (requires buf)"
+	@echo "  make build           Build all binaries into ./bin"
+	@echo "  make test            Run all unit tests"
 	@echo "  make test-postgres   Run integration tests against local PostgreSQL"
-	@echo "  make web-dev     Start Next.js frontend"
-	@echo "  make clean       Remove build artifacts"
+	@echo "  make lint            Lint Go + proto"
+	@echo "  make fmt             Format Go + proto"
+	@echo "  make dev             Run plowered server with reload (requires air)"
+	@echo "  make docker-up       Start local dev stack"
+	@echo "  make docker-down     Stop local dev stack"
+	@echo "  make migrate         Apply DB migrations"
+	@echo "  make web-install     Install web dependencies"
+	@echo "  make web-dev         Start the Next.js frontend"
+	@echo "  make clean           Remove build artifacts"
+
+env:
+	@if [ ! -f .env ]; then cp .env.example .env && echo "→ created .env from .env.example"; else echo "→ .env exists; skipping"; fi
+	@if [ ! -f web/.env.local ]; then cp web/.env.example web/.env.local && echo "→ created web/.env.local from web/.env.example"; else echo "→ web/.env.local exists; skipping"; fi
 
 proto:
 	$(BUF) lint
@@ -32,6 +45,9 @@ build:
 
 test:
 	$(GO) test ./... -race -count=1
+
+test-postgres:
+	$(GO) test -race -count=1 ./internal/storage/postgres/...
 
 lint:
 	$(GO) vet ./...
@@ -51,14 +67,13 @@ docker-down:
 	docker compose down
 
 migrate:
-	$(GO) run ./cmd/ploweredctl migrate up --db "$${PLOWERED_DATABASE_URL:-postgres://plowered:plowered@localhost:5432/plowered?sslmode=disable}"
+	$(GO) run ./cmd/ploweredctl migrate up
 
-test-postgres:
-	PLOWERED_TEST_DATABASE_URL="$${PLOWERED_TEST_DATABASE_URL:-postgres://plowered:plowered@localhost:5432/plowered?sslmode=disable}" \
-		$(GO) test -race -count=1 ./internal/storage/postgres/...
+web-install:
+	cd web && $(NPM) install
 
 web-dev:
-	cd web && npm run dev
+	cd web && $(NPM) run dev
 
 clean:
 	rm -rf $(BIN_DIR) proto/gen

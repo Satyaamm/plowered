@@ -27,10 +27,12 @@ data/
 *.sqlite
 *.sqlite3
 
-# Env / secrets
+# Env / secrets — keep .env.example committed; everything else stays local.
 .env
 .env.local
 .env.*.local
+!.env.example
+!web/.env.example
 *.pem
 *.key
 
@@ -47,7 +49,9 @@ node_modules/
 out/
 .pnpm-store/
 .turbo/
-web/.env*
+web/.env
+web/.env.local
+web/.env.*.local
 
 # Coverage
 coverage.txt

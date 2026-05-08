@@ -2,8 +2,21 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { Input, Button, makeStyles } from "@fluentui/react-components";
+import { Search24Regular } from "@fluentui/react-icons";
+
+const useStyles = makeStyles({
+  form: {
+    display: "flex",
+    gap: "8px",
+    width: "100%",
+    maxWidth: "640px",
+  },
+  input: { flex: 1 },
+});
 
 export function SearchBar({ initial = "" }: { initial?: string }) {
+  const styles = useStyles();
   const router = useRouter();
   const params = useSearchParams();
   const [q, setQ] = useState(initial || params.get("q") || "");
@@ -15,20 +28,15 @@ export function SearchBar({ initial = "" }: { initial?: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex w-full max-w-2xl gap-2">
-      <input
+    <form onSubmit={onSubmit} className={styles.form}>
+      <Input
+        className={styles.input}
         value={q}
-        onChange={(e) => setQ(e.target.value)}
+        onChange={(_, data) => setQ(data.value)}
         placeholder="Search assets — table name, qualified name, or keyword"
-        className="flex-1 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm focus:border-ink-400 focus:outline-none"
-        autoFocus
+        contentBefore={<Search24Regular />}
       />
-      <button
-        type="submit"
-        className="rounded-md bg-ink-900 px-4 py-2 text-sm text-white hover:bg-ink-600"
-      >
-        Search
-      </button>
+      <Button type="submit" appearance="primary">Search</Button>
     </form>
   );
 }

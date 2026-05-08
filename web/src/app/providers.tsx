@@ -1,10 +1,12 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { FluentProvider, SSRProvider, RendererProvider, createDOMRenderer } from "@fluentui/react-components";
 import { useState } from "react";
+import { ploweredLight } from "@/theme";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [client] = useState(
+  const [queryClient] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
@@ -12,5 +14,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       }),
   );
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const [renderer] = useState(() => createDOMRenderer());
+
+  return (
+    <RendererProvider renderer={renderer}>
+      <SSRProvider>
+        <FluentProvider theme={ploweredLight}>
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        </FluentProvider>
+      </SSRProvider>
+    </RendererProvider>
+  );
 }

@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	mcphandlers "github.com/Satyaamm/plowered/internal/api/mcp"
+	"github.com/Satyaamm/plowered/internal/config"
 	"github.com/Satyaamm/plowered/internal/storage"
 	"github.com/Satyaamm/plowered/internal/storage/memory"
 	"github.com/Satyaamm/plowered/pkg/mcp"
@@ -42,6 +43,9 @@ func main() {
 }
 
 func run() error {
+	if err := config.LoadDefault(); err != nil {
+		return err
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 

@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/Satyaamm/plowered/internal/api/middleware"
+	"github.com/Satyaamm/plowered/internal/config"
 	"github.com/Satyaamm/plowered/internal/server"
 	"github.com/Satyaamm/plowered/internal/storage"
 	"github.com/Satyaamm/plowered/internal/storage/memory"
@@ -33,6 +34,9 @@ func main() {
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
+	if err := config.LoadDefault(); err != nil {
+		return err
+	}
 	cfg, err := server.LoadConfig()
 	if err != nil {
 		return err
