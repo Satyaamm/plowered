@@ -133,14 +133,19 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 	mux.Handle("/readyz", healthHandler(health, cfg.Version))
 
 	apiMux := apihttp.Mux(deps.Store)
+	apiMux.HandleFunc("POST /v1/signup", apihttp.SignupHandler(apihttp.SignupConfig{
+		AuthConfig: deps.Auth,
+	}))
+
+	skipAuth := []string{"/healthz", "/readyz", "/v1/signup"}
 	verify := buildHTTPVerifier(deps.Auth)
 	chain := apihttp.Chain(apiMux,
 		apihttp.RecoveryMW(deps.Logger),
 		apihttp.RequestIDMW(),
 		apihttp.LoggingMW(deps.Logger),
 		apihttp.CORSMW(splitCSV(cfg.CORSAllowedOrigins)),
-		apihttp.AuthMW(verify, "/healthz", "/readyz"),
-		apihttp.TenantMW("/healthz", "/readyz"),
+		apihttp.AuthMW(verify, skipAuth...),
+		apihttp.TenantMW(skipAuth...),
 	)
 	mux.Handle("/v1/", chain)
 	return mux
