@@ -8,28 +8,28 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
+	nethttp "net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	apihttp "github.com/Satyaamm/plowered/internal/api/http"
 	"github.com/Satyaamm/plowered/internal/api/middleware"
+	"github.com/Satyaamm/plowered/internal/core/auth"
 	"github.com/Satyaamm/plowered/internal/storage"
 )
 
 // Deps bundles concrete dependencies the server needs at construction time.
-// Build it from main; do not read env vars or open connections inside this
-// package beyond what is wired here.
 type Deps struct {
 	Logger *slog.Logger
 	Store  storage.Store
 	Auth   middleware.AuthConfig
 }
 
-// Run starts both listeners and blocks until ctx is cancelled, returning the
-// first non-nil error from either server (or nil on a clean shutdown).
+// Run starts both listeners and blocks until ctx is cancelled.
 func Run(ctx context.Context, cfg Config, deps Deps) error {
 	if deps.Logger == nil {
 		deps.Logger = slog.Default()
@@ -42,16 +42,13 @@ func Run(ctx context.Context, cfg Config, deps Deps) error {
 	skip := skipMethods()
 
 	grpcSrv := buildGRPCServer(cfg, deps, skip)
-
-	// TODO(after `buf generate`): register service handlers here. Pseudocode:
-	//   catalog := graph.NewService(deps.Store, az, audit)
-	//   catalogv1.RegisterCatalogServiceServer(grpcSrv, apiCatalog.New(catalog))
-	//   ... and so on for lineage, context, connector, mcp.
+	// TODO(after `buf generate`): register service handlers here, e.g.
+	//   catalogv1.RegisterCatalogServiceServer(grpcSrv, catalogHandler)
 	_ = grpcSrv
 
-	httpSrv := &http.Server{
+	httpSrv := &nethttp.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           healthHandler(health, cfg.Version),
+		Handler:           buildHTTPHandler(cfg, deps, health),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -86,7 +83,7 @@ func Run(ctx context.Context, cfg Config, deps Deps) error {
 
 	go func() {
 		defer wg.Done()
-		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
 			errs <- fmt.Errorf("http serve: %w", err)
 		}
 	}()
@@ -108,9 +105,9 @@ func Run(ctx context.Context, cfg Config, deps Deps) error {
 }
 
 func buildGRPCServer(cfg Config, deps Deps, skip map[string]bool) *grpc.Server {
-	auth := middleware.Auth(deps.Auth)
+	authMW := middleware.Auth(deps.Auth)
 	return grpc.NewServer(
-		grpc.Creds(insecure.NewCredentials()), // TLS termination handled at the edge in v0
+		grpc.Creds(insecure.NewCredentials()),
 		grpc.ChainUnaryInterceptor(
 			middleware.Recovery(),
 			middleware.RequestID(),
@@ -120,7 +117,7 @@ func buildGRPCServer(cfg Config, deps Deps, skip map[string]bool) *grpc.Server {
 				Burst:       cfg.RateLimitBurst,
 				SkipMethods: skip,
 			}),
-			auth,
+			authMW,
 			middleware.Tenant(skip),
 		),
 		grpc.ChainStreamInterceptor(
@@ -130,17 +127,47 @@ func buildGRPCServer(cfg Config, deps Deps, skip map[string]bool) *grpc.Server {
 	)
 }
 
+func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handler {
+	mux := nethttp.NewServeMux()
+	mux.Handle("/healthz", healthHandler(health, cfg.Version))
+	mux.Handle("/readyz", healthHandler(health, cfg.Version))
+
+	apiMux := apihttp.Mux(deps.Store)
+	verify := buildHTTPVerifier(deps.Auth)
+	chain := apihttp.Chain(apiMux,
+		apihttp.RecoveryMW(deps.Logger),
+		apihttp.RequestIDMW(),
+		apihttp.LoggingMW(deps.Logger),
+		apihttp.CORSMW(splitCSV(cfg.CORSAllowedOrigins)),
+		apihttp.AuthMW(verify, "/healthz", "/readyz"),
+		apihttp.TenantMW("/healthz", "/readyz"),
+	)
+	mux.Handle("/v1/", chain)
+	return mux
+}
+
+// buildHTTPVerifier adapts the gRPC AuthConfig into an HTTP TokenVerifier so
+// JWT semantics stay identical across both surfaces.
+func buildHTTPVerifier(cfg middleware.AuthConfig) apihttp.TokenVerifier {
+	if cfg.DevPrincipal != nil {
+		dev := *cfg.DevPrincipal
+		return func(_ string) (auth.Principal, error) { return dev, nil }
+	}
+	return func(token string) (auth.Principal, error) {
+		return middleware.VerifyToken(cfg, token)
+	}
+}
+
 func skipMethods() map[string]bool {
-	// Reflection / health checks bypass auth + tenant + rate limiting.
 	return map[string]bool{
-		"/grpc.health.v1.Health/Check":                    true,
-		"/grpc.health.v1.Health/Watch":                    true,
+		"/grpc.health.v1.Health/Check":                                   true,
+		"/grpc.health.v1.Health/Watch":                                   true,
 		"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo":      true,
 		"/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo": true,
 	}
 }
 
-func shutdown(grpcSrv *grpc.Server, httpSrv *http.Server, grace time.Duration) {
+func shutdown(grpcSrv *grpc.Server, httpSrv *nethttp.Server, grace time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()
 
@@ -162,4 +189,18 @@ func pingStore(ctx context.Context, s pingable) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	return s.Ping(ctx)
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return []string{"*"}
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }

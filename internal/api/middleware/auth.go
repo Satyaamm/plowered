@@ -98,6 +98,13 @@ func Auth(cfg AuthConfig) grpc.UnaryServerInterceptor {
 	}
 }
 
+// VerifyToken parses and verifies a JWT against the supplied AuthConfig and
+// returns the resulting Principal. Exposed so the HTTP middleware can reuse
+// the same JWT semantics as the gRPC interceptor.
+func VerifyToken(c AuthConfig, rawToken string) (auth.Principal, error) {
+	return c.verify(rawToken)
+}
+
 func (c AuthConfig) verify(rawToken string) (auth.Principal, error) {
 	keyfunc := func(t *jwt.Token) (any, error) {
 		switch t.Method.Alg() {

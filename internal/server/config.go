@@ -21,6 +21,11 @@ type Config struct {
 	// Rate limit defaults (per tenant)
 	RateLimitPerSecond float64
 	RateLimitBurst     int
+
+	// CORSAllowedOrigins is a comma-separated list of origins permitted to
+	// hit the HTTP API in browsers. "*" allows all (dev only). Empty defaults
+	// to "*" so local dev works out of the box.
+	CORSAllowedOrigins string
 }
 
 func LoadConfig() (Config, error) {
@@ -30,7 +35,8 @@ func LoadConfig() (Config, error) {
 		GRPCAddr:      getenvDefault("PLOWERED_GRPC_ADDR", ":9090"),
 		HTTPAddr:      getenvDefault("PLOWERED_HTTP_ADDR", ":8080"),
 		DatabaseURL:   os.Getenv("PLOWERED_DATABASE_URL"),
-		ShutdownGrace: parseDuration("PLOWERED_SHUTDOWN_GRACE", 10*time.Second),
+		ShutdownGrace:      parseDuration("PLOWERED_SHUTDOWN_GRACE", 10*time.Second),
+		CORSAllowedOrigins: getenvDefault("PLOWERED_CORS_ALLOWED_ORIGINS", "*"),
 	}
 
 	rps, err := parseFloat("PLOWERED_RATE_LIMIT_PER_SECOND", 50)
