@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package plowered.v1;
+
+import "google/api/annotations.proto";
+import "plowered/v1/common.proto";
+
+// ContextService powers the AI layer: generate, score, and evaluate context
+// for the metadata graph.
+service ContextService {
+  // Generate a business description for an asset. Returns a draft that must be
+  // reviewed before it replaces the human-authored description field.
+  rpc GenerateDescription(GenerateDescriptionRequest) returns (GenerateDescriptionResponse) {
+    option (google.api.http) = {
+      post: "/v1/context:generateDescription"
+      body: "*"
+    };
+  }
+
+  // Score an asset's quality (0-100) from freshness, schema stability, ownership,
+  // downstream usage, and description completeness.
+  rpc ScoreQuality(ScoreQualityRequest) returns (ScoreQualityResponse) {
+    option (google.api.http) = {
+      post: "/v1/context:scoreQuality"
+      body: "*"
+    };
+  }
+
+  // Evaluate whether an answer produced by an external agent was grounded in
+  // the catalog. Used for trace logging and quality-over-time dashboards.
+  rpc Evaluate(EvaluateRequest) returns (EvaluateResponse) {
+    option (google.api.http) = {
+      post: "/v1/context:evaluate"
+      body: "*"
+    };
+  }
+}
+
+message GenerateDescriptionRequest {
+  string asset_id = 1;
+  string model    = 2;     // model identifier resolved by the LLM provider
+}
+message GenerateDescriptionResponse {
+  string description = 1;
+  string trace_id    = 2;  // for audit
+  float  confidence  = 3;
+}
+
+message ScoreQualityRequest  { string asset_id = 1; }
+message ScoreQualityResponse {
+  int32  score          = 1; // 0..100
+  string rationale      = 2;
+  map<string, float> components = 3; // freshness, ownership, etc.
+}
+
+message EvaluateRequest {
+  string question = 1;
+  string answer   = 2;
+  repeated AssetRef cited_assets = 3;
+}
+message EvaluateResponse {
+  bool   grounded     = 1;
+  float  groundedness = 2;
+  string rationale    = 3;
+  string trace_id     = 4;
+}

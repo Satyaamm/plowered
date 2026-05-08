@@ -1,0 +1,58 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+*.test
+*.out
+*.prof
+vendor/
+go.work
+go.work.sum
+
+# Generated proto code
+proto/gen/
+**/*.pb.go
+**/*.pb.gw.go
+!proto/plowered/**/*.proto
+
+# Local data
+data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Node / web
+node_modules/
+.next/
+out/
+.pnpm-store/
+.turbo/
+web/.env*
+
+# Coverage
+coverage.txt
+coverage.html
+*.coverprofile
+
+# Docker
+.docker/

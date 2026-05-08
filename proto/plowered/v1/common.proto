@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package plowered.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+// AssetType enumerates the kinds of nodes Plowered tracks.
+// New types must be appended; never reorder existing values.
+enum AssetType {
+  ASSET_TYPE_UNSPECIFIED = 0;
+  ASSET_TYPE_DATABASE    = 1;
+  ASSET_TYPE_SCHEMA      = 2;
+  ASSET_TYPE_TABLE       = 3;
+  ASSET_TYPE_VIEW        = 4;
+  ASSET_TYPE_COLUMN      = 5;
+  ASSET_TYPE_DASHBOARD   = 6;
+  ASSET_TYPE_REPORT      = 7;
+  ASSET_TYPE_DBT_MODEL   = 8;
+  ASSET_TYPE_DAG         = 9;
+  ASSET_TYPE_ML_MODEL    = 10;
+  ASSET_TYPE_GLOSSARY_TERM = 11;
+}
+
+// Trust level reported by the QualityAgent and human reviewers.
+enum TrustLevel {
+  TRUST_LEVEL_UNSPECIFIED = 0;
+  TRUST_LEVEL_UNVERIFIED  = 1;
+  TRUST_LEVEL_DRAFT       = 2;
+  TRUST_LEVEL_REVIEWED    = 3;
+  TRUST_LEVEL_CERTIFIED   = 4;
+  TRUST_LEVEL_DEPRECATED  = 5;
+}
+
+message Tag {
+  string id    = 1;
+  string name  = 2;
+  string color = 3;
+}
+
+message Owner {
+  string id     = 1;     // user or group id
+  string name   = 2;
+  string email  = 3;
+  string kind   = 4;     // "user" | "group"
+}
+
+// Lightweight reference to an asset. Used inside other messages to avoid
+// pulling the full payload when only the identity matters.
+message AssetRef {
+  string     id             = 1;
+  string     qualified_name = 2;
+  AssetType  type           = 3;
+}
+
+message PageInfo {
+  string next_page_token = 1;
+  int32  total_size      = 2;
+}
+
+message Pagination {
+  int32  page_size  = 1;
+  string page_token = 2;
+}
+
+message Audit {
+  google.protobuf.Timestamp created_at = 1;
+  google.protobuf.Timestamp updated_at = 2;
+  string                    created_by = 3;
+  string                    updated_by = 4;
+}

@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package plowered.v1;
+
+import "google/api/annotations.proto";
+import "plowered/v1/common.proto";
+
+enum LineageDirection {
+  LINEAGE_DIRECTION_UNSPECIFIED = 0;
+  LINEAGE_DIRECTION_UPSTREAM    = 1;
+  LINEAGE_DIRECTION_DOWNSTREAM  = 2;
+  LINEAGE_DIRECTION_BOTH        = 3;
+}
+
+message LineageEdge {
+  string    id                = 1;
+  AssetRef  source            = 2;
+  AssetRef  target            = 3;
+  string    transformation_id = 4;  // FK to a Transformation row (SQL, dbt model, etc.)
+  string    transformation_summary = 5;
+  bool      is_column_level   = 6;
+}
+
+message LineageNode {
+  Asset           asset = 1;
+  int32           depth = 2;       // distance from the seed asset
+}
+
+message LineageGraph {
+  repeated LineageNode nodes = 1;
+  repeated LineageEdge edges = 2;
+  bool                 truncated = 3;  // true if traversal hit the depth limit
+}
+
+service LineageService {
+  rpc GetLineage(GetLineageRequest) returns (LineageGraph) {
+    option (google.api.http) = {
+      get: "/v1/assets/{asset_id}/lineage"
+    };
+  }
+
+  rpc ImpactAnalysis(ImpactAnalysisRequest) returns (ImpactAnalysisResponse) {
+    option (google.api.http) = {
+      post: "/v1/lineage:impact"
+      body: "*"
+    };
+  }
+}
+
+message GetLineageRequest {
+  string           asset_id  = 1;
+  LineageDirection direction = 2;
+  int32            depth     = 3;     // default 3
+  bool             column_level = 4;
+}
+
+message ImpactAnalysisRequest {
+  string asset_id = 1;
+  string proposed_change = 2;          // e.g. "drop column user_email"
+}
+
+message ImpactAnalysisResponse {
+  repeated AssetRef affected_downstream = 1;
+  int32             total_count          = 2;
+  string            summary              = 3;
+}

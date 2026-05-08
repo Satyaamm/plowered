@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package plowered.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+enum ConnectorRunStatus {
+  CONNECTOR_RUN_STATUS_UNSPECIFIED = 0;
+  CONNECTOR_RUN_STATUS_QUEUED      = 1;
+  CONNECTOR_RUN_STATUS_RUNNING     = 2;
+  CONNECTOR_RUN_STATUS_SUCCEEDED   = 3;
+  CONNECTOR_RUN_STATUS_FAILED      = 4;
+  CONNECTOR_RUN_STATUS_CANCELLED   = 5;
+}
+
+message ConnectorInfo {
+  string name             = 1;     // connector identifier, e.g. "warehouse", "relational-db"
+  string version          = 2;
+  repeated string supported_asset_types = 3;
+  bool   supports_lineage = 4;
+}
+
+message ConnectorInstance {
+  string                 id          = 1;
+  string                 connector_name = 2;
+  string                 display_name = 3;
+  google.protobuf.Struct config       = 4;     // non-secret config
+  string                 cron         = 5;     // sync schedule
+  string                 tenant_id    = 6;
+}
+
+message ConnectorRun {
+  string                       id            = 1;
+  string                       instance_id   = 2;
+  ConnectorRunStatus           status        = 3;
+  google.protobuf.Timestamp    started_at    = 4;
+  google.protobuf.Timestamp    finished_at   = 5;
+  int64                        assets_seen   = 6;
+  int64                        edges_seen    = 7;
+  string                       error_message = 8;
+}
+
+service ConnectorService {
+  rpc ListAvailable(ListAvailableConnectorsRequest) returns (ListAvailableConnectorsResponse) {
+    option (google.api.http) = { get: "/v1/connectors:available" };
+  }
+  rpc CreateInstance(CreateInstanceRequest) returns (ConnectorInstance) {
+    option (google.api.http) = { post: "/v1/connectors/instances" body: "instance" };
+  }
+  rpc TriggerSync(TriggerSyncRequest) returns (ConnectorRun) {
+    option (google.api.http) = { post: "/v1/connectors/instances/{instance_id}:sync" body: "*" };
+  }
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse) {
+    option (google.api.http) = { get: "/v1/connectors/instances/{instance_id}/runs" };
+  }
+}
+
+message ListAvailableConnectorsRequest {}
+message ListAvailableConnectorsResponse { repeated ConnectorInfo connectors = 1; }
+
+message CreateInstanceRequest { ConnectorInstance instance = 1; }
+
+message TriggerSyncRequest { string instance_id = 1; bool full_refresh = 2; }
+
+message ListRunsRequest {
+  string instance_id = 1;
+  int32  limit       = 2;
+}
+message ListRunsResponse { repeated ConnectorRun runs = 1; }

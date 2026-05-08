@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package plowered.v1;
+
+import "google/api/annotations.proto";
+import "plowered/v1/common.proto";
+import "plowered/v1/lineage.proto";
+
+// MCPService exposes the catalog over Model Context Protocol semantics.
+// Tools listed here should match what plowered-mcp advertises over stdio,
+// keeping HTTP and stdio transports surface-equivalent.
+service MCPService {
+  rpc McpSearchAssets(McpSearchAssetsRequest) returns (McpSearchAssetsResponse) {
+    option (google.api.http) = { post: "/mcp/v1/search_assets" body: "*" };
+  }
+  rpc McpGetAsset(McpGetAssetRequest) returns (McpGetAssetResponse) {
+    option (google.api.http) = { post: "/mcp/v1/get_asset" body: "*" };
+  }
+  rpc McpGetLineage(McpGetLineageRequest) returns (McpGetLineageResponse) {
+    option (google.api.http) = { post: "/mcp/v1/get_lineage" body: "*" };
+  }
+  rpc McpProposeQuery(McpProposeQueryRequest) returns (McpProposeQueryResponse) {
+    option (google.api.http) = { post: "/mcp/v1/propose_query" body: "*" };
+  }
+}
+
+message McpSearchAssetsRequest  { string query = 1; int32 limit = 2; }
+message McpSearchAssetsResponse { repeated AssetRef hits = 1; }
+
+message McpGetAssetRequest  { string qualified_name = 1; }
+message McpGetAssetResponse { string markdown = 1; }   // pre-rendered for LLM
+
+message McpGetLineageRequest {
+  string           qualified_name = 1;
+  LineageDirection direction      = 2;
+  int32            depth          = 3;
+}
+message McpGetLineageResponse { LineageGraph graph = 1; }
+
+message McpProposeQueryRequest  { string question = 1; }
+message McpProposeQueryResponse {
+  string sql                 = 1;
+  repeated AssetRef cited    = 2;
+  string explanation         = 3;
+}
