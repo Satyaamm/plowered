@@ -15,7 +15,8 @@ help:
 	@echo "  make dev         Run plowered server with reload (requires air)"
 	@echo "  make docker-up   Start local dev stack (postgres, nats, meilisearch)"
 	@echo "  make docker-down Stop local dev stack"
-	@echo "  make migrate     Apply DB migrations"
+	@echo "  make migrate         Apply DB migrations"
+	@echo "  make test-postgres   Run integration tests against local PostgreSQL"
 	@echo "  make web-dev     Start Next.js frontend"
 	@echo "  make clean       Remove build artifacts"
 
@@ -50,7 +51,11 @@ docker-down:
 	docker compose down
 
 migrate:
-	$(GO) run ./cmd/ploweredctl migrate up
+	$(GO) run ./cmd/ploweredctl migrate up --db "$${PLOWERED_DATABASE_URL:-postgres://plowered:plowered@localhost:5432/plowered?sslmode=disable}"
+
+test-postgres:
+	PLOWERED_TEST_DATABASE_URL="$${PLOWERED_TEST_DATABASE_URL:-postgres://plowered:plowered@localhost:5432/plowered?sslmode=disable}" \
+		$(GO) test -race -count=1 ./internal/storage/postgres/...
 
 web-dev:
 	cd web && npm run dev
