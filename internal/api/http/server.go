@@ -15,9 +15,10 @@ import (
 	"github.com/Satyaamm/plowered/internal/storage"
 )
 
-// Mux returns an http.Handler with every catalog/lineage/context route
-// registered. The caller wraps it in the auth/tenant/audit chain.
-func Mux(store storage.Store) http.Handler {
+// Mux returns an *http.ServeMux with every catalog/lineage/context route
+// registered. Callers may add more routes (signup, admin, etc.) before
+// wrapping the result in the auth/tenant/audit chain.
+func Mux(store storage.Store) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /v1/assets",                     listAssetsHandler(store))

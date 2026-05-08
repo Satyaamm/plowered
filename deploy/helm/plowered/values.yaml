@@ -1,0 +1,101 @@
+# Default values for the Plowered Helm chart.
+# Override per-environment with -f overrides.yaml or --set.
+
+# ─── Image ────────────────────────────────────────────────────────────────
+image:
+  registry: ghcr.io
+  repository: satyaamm/plowered
+  tag: ""              # defaults to .Chart.AppVersion when empty
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ─── Sizing ───────────────────────────────────────────────────────────────
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# ─── Listeners ────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 9090
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: plowered.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# ─── Configuration (read from .env on dev; here in production) ─────────────
+config:
+  env: production
+  shutdownGrace: 10s
+  jwt:
+    issuer: plowered
+    audience: plowered
+  rateLimit:
+    perSecond: 50
+    burst: 100
+  cors:
+    allowedOrigins: ""    # comma-separated; empty disables external clients
+
+# ─── Secrets — all values come from external sources in production ────────
+# Either ref an existing Secret (existingSecret) or set values here and let
+# the chart create one for you. Do NOT commit production values into a
+# values.yaml file in git.
+secrets:
+  existingSecret: ""    # name of an existing Secret containing the keys below
+  values:
+    databaseUrl: ""           # PLOWERED_DATABASE_URL
+    jwtHs256Secret: ""        # PLOWERED_JWT_HS256_SECRET (dev/preview only)
+    jwtRs256PublicKey: ""     # PLOWERED_JWT_RS256_PUB_KEY (production)
+
+# ─── Health probes ────────────────────────────────────────────────────────
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 2
+    periodSeconds: 5
+
+# ─── Pod hardening ────────────────────────────────────────────────────────
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+podSecurityContext:
+  fsGroup: 65532
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
