@@ -1,10 +1,40 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { use } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Title2,
+  Subtitle2,
+  Caption1,
+  Body1,
+  Badge,
+  Spinner,
+  Divider,
+  makeStyles,
+  tokens,
+} from "@fluentui/react-components";
 import { api } from "@/lib/api";
 
+const useStyles = makeStyles({
+  root: { display: "flex", flexDirection: "column", gap: "24px" },
+  qn: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    color: tokens.colorNeutralForeground2,
+  },
+  meta: { display: "flex", gap: "12px", alignItems: "center", marginTop: "4px" },
+  metaItem: {
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200,
+  },
+  tags: { display: "flex", flexWrap: "wrap", gap: "6px" },
+  lineageItem: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    color: tokens.colorNeutralForeground2,
+  },
+});
+
 export default function AssetPage({ params }: { params: Promise<{ qn: string }> }) {
+  const styles = useStyles();
   const { qn: encoded } = use(params);
   const qn = decodeURIComponent(encoded);
 
@@ -19,64 +49,55 @@ export default function AssetPage({ params }: { params: Promise<{ qn: string }> 
     enabled: !!asset.data?.id,
   });
 
-  if (asset.isLoading) return <p className="text-sm text-ink-400">Loading…</p>;
-  if (asset.error)
-    return <p className="text-sm text-red-600">{(asset.error as Error).message}</p>;
+  if (asset.isLoading) return <Spinner label="Loading…" />;
+  if (asset.error) return <Body1>{(asset.error as Error).message}</Body1>;
   if (!asset.data) return null;
 
   const a = asset.data;
 
   return (
-    <div className="space-y-8">
+    <div className={styles.root}>
       <header>
-        <div className="font-mono text-sm text-ink-600">{a.qualified_name}</div>
-        <h1 className="text-2xl font-bold text-ink-900">{a.name}</h1>
-        <div className="mt-1 flex items-center gap-3 text-xs text-ink-600">
-          <span className="rounded bg-ink-100 px-2 py-0.5 uppercase tracking-wide">
-            {a.type || "asset"}
+        <Caption1 className={styles.qn}>{a.qualified_name}</Caption1>
+        <Title2>{a.name}</Title2>
+        <div className={styles.meta}>
+          <Badge appearance="outline">{a.type || "asset"}</Badge>
+          <span className={styles.metaItem}>trust: {a.trust}</span>
+          <span className={styles.metaItem}>
+            updated {new Date(a.updated_at).toLocaleDateString()}
           </span>
-          <span>trust: {a.trust}</span>
-          <span>updated {new Date(a.updated_at).toLocaleDateString()}</span>
         </div>
       </header>
 
       {a.description && (
         <section>
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-ink-600">
-            Description
-          </h2>
-          <p className="text-ink-900">{a.description}</p>
+          <Subtitle2>Description</Subtitle2>
+          <Body1>{a.description}</Body1>
         </section>
       )}
 
       {a.tags && a.tags.length > 0 && (
         <section>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-600">
-            Tags
-          </h2>
-          <div className="flex flex-wrap gap-2">
+          <Subtitle2>Tags</Subtitle2>
+          <div className={styles.tags}>
             {a.tags.map((t) => (
-              <span key={t} className="rounded-full border border-ink-200 bg-white px-2 py-0.5 text-xs">
-                {t}
-              </span>
+              <Badge key={t} appearance="tint" color="brand">{t}</Badge>
             ))}
           </div>
         </section>
       )}
 
+      <Divider />
+
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-600">
-          Upstream lineage
-        </h2>
-        {lineage.isLoading && <p className="text-sm text-ink-400">Loading…</p>}
-        {lineage.data && lineage.data.edges.length === 0 && (
-          <p className="text-sm text-ink-400">No upstream edges.</p>
-        )}
+        <Subtitle2>Upstream lineage</Subtitle2>
+        {lineage.isLoading && <Spinner size="tiny" />}
+        {lineage.data && lineage.data.edges.length === 0 && <Body1>No upstream edges.</Body1>}
         {lineage.data && lineage.data.edges.length > 0 && (
-          <ul className="space-y-1 font-mono text-sm">
+          <ul style={{ paddingLeft: 0, listStyle: "none" }}>
             {lineage.data.edges.map((e) => (
-              <li key={e.id} className="text-ink-600">
-                ← <span className="text-ink-900">{e.source_id}</span>
+              <li key={e.id} className={styles.lineageItem}>
+                ← {e.source_id}
               </li>
             ))}
           </ul>

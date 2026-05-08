@@ -13,10 +13,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Satyaamm/plowered/internal/config"
 	"github.com/Satyaamm/plowered/internal/storage/postgres"
 )
 
 func main() {
+	_ = config.LoadDefault()
 	if err := run(os.Args[1:]); err != nil {
 		slog.New(slog.NewTextHandler(os.Stderr, nil)).Error("ploweredctl", "err", err)
 		os.Exit(1)
