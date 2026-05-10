@@ -9,6 +9,7 @@ import {
   Dropdown,
   Field,
   Input,
+  Label,
   MessageBar,
   MessageBarBody,
   Option,
@@ -50,13 +51,31 @@ const useStyles = makeStyles({
     gridTemplateColumns: "1fr 1fr",
     gap: "12px",
   },
-  // Phone row: two side-by-side Field elements. Country code is a
-  // narrow fixed column so the labels and helper text align nicely.
-  phoneRow: {
+  // Phone block: a single labeled group whose interior is a 2-column
+  // grid (country code | number). One shared hint sits under both so
+  // the row never looks lopsided when one Field has a hint and the
+  // other doesn't.
+  phoneBlock: { display: "flex", flexDirection: "column", gap: "6px" },
+  phoneLabels: {
     display: "grid",
-    gridTemplateColumns: "140px 1fr",
+    gridTemplateColumns: "150px 1fr",
     gap: "12px",
-    alignItems: "start",
+  },
+  phoneInputs: {
+    display: "grid",
+    gridTemplateColumns: "150px 1fr",
+    gap: "12px",
+    alignItems: "stretch",
+  },
+  phoneHint: {
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground3,
+    marginTop: "2px",
+  },
+  phoneError: {
+    fontSize: "12px",
+    color: tokens.colorPaletteRedForeground1,
+    marginTop: "2px",
   },
   meta: {
     fontSize: "12px",
@@ -302,9 +321,18 @@ export default function SignupPage() {
           />
         </Field>
 
-        <div className={styles.phoneRow}>
-          <Field label="Country code">
+        <div className={styles.phoneBlock}>
+          <div className={styles.phoneLabels}>
+            <Label htmlFor="phone-country" weight="semibold">
+              Country code
+            </Label>
+            <Label htmlFor="phone-number" weight="semibold">
+              Phone (optional)
+            </Label>
+          </div>
+          <div className={styles.phoneInputs}>
             <Dropdown
+              id="phone-country"
               value={dialButtonText}
               selectedOptions={[phoneCountry]}
               onOptionSelect={(_, d) => setPhoneCountry(d.optionValue ?? "+1")}
@@ -341,15 +369,8 @@ export default function SignupPage() {
                 </Option>
               ))}
             </Dropdown>
-          </Field>
-
-          <Field
-            label="Phone (optional)"
-            hint="Used only for security alerts and break-glass recovery."
-            validationState={showErr("phone") ? "error" : "none"}
-            validationMessage={showErr("phone")}
-          >
             <Input
+              id="phone-number"
               type="tel"
               inputMode="numeric"
               autoComplete="tel-national"
@@ -363,7 +384,14 @@ export default function SignupPage() {
               maxLength={20}
               disabled={signup.isPending}
             />
-          </Field>
+          </div>
+          {showErr("phone") ? (
+            <span className={styles.phoneError}>{showErr("phone")}</span>
+          ) : (
+            <span className={styles.phoneHint}>
+              Used only for security alerts and break-glass recovery.
+            </span>
+          )}
         </div>
 
         <Field
