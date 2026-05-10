@@ -84,11 +84,18 @@ func parseInto(r io.Reader, set func(k, v string)) error {
 }
 
 func stripInlineComment(v string) string {
-	// Only strip when the # is preceded by whitespace and not inside quotes.
+	// Only strip when the # is preceded by whitespace. When the value is
+	// quoted, comments after the closing quote are also stripped.
 	if v == "" {
 		return v
 	}
 	if v[0] == '\'' || v[0] == '"' {
+		q := v[0]
+		for i := 1; i < len(v); i++ {
+			if v[i] == q {
+				return v[:i+1]
+			}
+		}
 		return v
 	}
 	for i := 1; i < len(v); i++ {

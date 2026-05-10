@@ -8,24 +8,50 @@ image:
   tag: ""              # defaults to .Chart.AppVersion when empty
   pullPolicy: IfNotPresent
 
+# Worker image — defaults to {repository}-worker, falls back to repository
+# when only a single image is published.
+workerImage:
+  repository: ""        # empty → "<image.repository>-worker"
+  tag: ""
+  pullPolicy: IfNotPresent
+
 imagePullSecrets: []
 
-# ─── Sizing ───────────────────────────────────────────────────────────────
+# ─── API server sizing ────────────────────────────────────────────────────
 replicaCount: 2
 
 resources:
-  requests:
-    cpu: 100m
-    memory: 256Mi
-  limits:
-    cpu: 1000m
-    memory: 1Gi
+  requests: { cpu: 100m,  memory: 256Mi }
+  limits:   { cpu: 1000m, memory: 1Gi }
 
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
+
+# ─── Worker pool ──────────────────────────────────────────────────────────
+worker:
+  enabled: true
+  replicaCount: 2
+  concurrency: 10
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1000m, memory: 1Gi }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+
+# ─── Scheduler (cron + reaper) ────────────────────────────────────────────
+# Runs as a goroutine inside the API process. To pin scheduling to one
+# replica, set PLOWERED_SCHEDULER_DISABLED=1 on every other replica via
+# its own overrides values file.
+scheduler:
+  cronInterval: 30s
+  reaperInterval: 1m
+  stuckAfter: 5m
 
 # ─── Listeners ────────────────────────────────────────────────────────────
 service:
@@ -65,6 +91,7 @@ secrets:
   existingSecret: ""    # name of an existing Secret containing the keys below
   values:
     databaseUrl: ""           # PLOWERED_DATABASE_URL
+    redisUrl: ""              # PLOWERED_REDIS_URL (e.g. redis://:<pw>@host:6379/0)
     jwtHs256Secret: ""        # PLOWERED_JWT_HS256_SECRET (dev/preview only)
     jwtRs256PublicKey: ""     # PLOWERED_JWT_RS256_PUB_KEY (production)
 
@@ -99,3 +126,25 @@ serviceAccount:
   create: true
   annotations: {}
   name: ""
+
+# ─── Optional managed dependencies (Bitnami charts) ───────────────────────
+# Off by default. Enable for single-cluster or preview environments.
+postgresql:
+  enabled: false
+  auth:
+    username: plowered
+    password: ""              # set explicitly when enabling
+    database: plowered
+  primary:
+    persistence:
+      size: 20Gi
+
+redis:
+  enabled: false
+  architecture: standalone
+  auth:
+    enabled: true
+    password: ""              # set explicitly when enabling
+  master:
+    persistence:
+      size: 8Gi

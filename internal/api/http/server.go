@@ -11,16 +11,199 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/audit"
+	"github.com/Satyaamm/plowered/internal/core/connection"
+	"github.com/Satyaamm/plowered/internal/core/deleted"
+	"github.com/Satyaamm/plowered/internal/core/dsr"
+	"github.com/Satyaamm/plowered/internal/core/email"
+	"github.com/Satyaamm/plowered/internal/core/glossary"
 	"github.com/Satyaamm/plowered/internal/core/graph"
+	"github.com/Satyaamm/plowered/internal/core/identity"
+	"github.com/Satyaamm/plowered/internal/core/jobs"
+	"github.com/Satyaamm/plowered/internal/core/legalhold"
+	"github.com/Satyaamm/plowered/internal/core/notify"
+	"github.com/Satyaamm/plowered/internal/core/secrets"
+	"github.com/Satyaamm/plowered/internal/core/pipeline"
+	"github.com/Satyaamm/plowered/internal/core/policy"
+	"github.com/Satyaamm/plowered/internal/core/quality"
+	"github.com/Satyaamm/plowered/internal/core/search"
 	"github.com/Satyaamm/plowered/internal/storage"
+	"github.com/Satyaamm/plowered/internal/worker"
 )
 
-// Mux returns an *http.ServeMux with every catalog/lineage/context route
-// registered. Callers may add more routes (signup, admin, etc.) before
-// wrapping the result in the auth/tenant/audit chain.
-func Mux(store storage.Store) *http.ServeMux {
-	mux := http.NewServeMux()
+// Deps bundles the stores and services the HTTP layer needs. Catalog is
+// required; the rest are optional — pass nil to skip registering those
+// routes.
+type Deps struct {
+	Catalog   storage.Store
+	Pipelines pipeline.Repo
+	Quality   quality.Store
+	Notify    notify.Repo
+	Policies  policy.RuleRepo
+	Audit       audit.Reader
+	AuditWriter audit.Writer
+	Deleted     deleted.Repo
+	LegalHolds  legalhold.Repo
+	DSR         dsr.Repo
+	Identity    identity.Repo
+	Email       email.Sender
+	AuthCfg     AuthConfig
+	Connections connection.Repo
+	ConnRegistry *connection.Registry
+	Vault       secrets.Vault
 
+	// Enqueuer dispatches async jobs (pipeline runs, quality checks). When
+	// nil, NewMux falls back to worker.NoopEnqueuer — handlers still respond
+	// quickly but no background work happens.
+	Enqueuer worker.Enqueuer
+
+	// Logs powers the /v1/runs/{id}/logs read + SSE tail endpoint. Optional;
+	// when nil the routes return 404.
+	Logs pipeline.LogReader
+
+	// ColumnLineage powers /v1/assets/{id}/column-lineage. Optional.
+	ColumnLineage ColumnLineageReader
+
+	// Glossary powers /v1/glossary/* and the term assignment endpoints.
+	Glossary glossary.Repo
+
+	// Classifier runs sample-based classification jobs. Optional.
+	Classifier         Classifier
+	Classifications    ClassificationReader
+
+	// Indexer + Searcher power /v1/search:semantic. Optional.
+	SearchIndexer  *search.Indexer
+	SearchSearcher *search.Searcher
+
+	// Jobs powers /v1/jobs/{id} polling and tracks long-running async
+	// work (classify, reindex). Optional — when nil, classify + reindex
+	// fall back to their pre-jobs synchronous behavior.
+	Jobs jobs.Repo
+
+	// AIProviders powers /v1/ai/providers (BYOM). Requires Vault to be
+	// wired so api keys land sealed. Optional — when nil, the routes
+	// aren't registered.
+	AIProviders aiprovider.Repo
+}
+
+// NewMux returns an *http.ServeMux with every registered route. Callers
+// may add more routes before wrapping the result in the auth/tenant/audit
+// chain.
+func NewMux(d Deps) *http.ServeMux {
+	mux := http.NewServeMux()
+	enq := d.Enqueuer
+	if enq == nil {
+		enq = worker.NoopEnqueuer{}
+	}
+	if d.Catalog != nil {
+		registerCatalog(mux, d.Catalog)
+	}
+	if d.Pipelines != nil {
+		pipelineHandlers(mux, d.Pipelines, enq, d.Deleted, d.LegalHolds)
+	}
+	if d.Quality != nil {
+		checkHandlers(mux, d.Quality, enq, d.Deleted, d.LegalHolds)
+	}
+	if d.Notify != nil {
+		notifyHandlers(mux, d.Notify)
+	}
+	if d.Policies != nil {
+		policyHandlers(mux, d.Policies, d.Deleted, d.LegalHolds)
+	}
+	if d.Audit != nil {
+		auditHandlers(mux, d.Audit)
+	}
+	if d.Deleted != nil {
+		deletedHandlers(mux, d.Deleted, buildRestorers(d))
+	}
+	if d.LegalHolds != nil {
+		legalHoldHandlers(mux, d.LegalHolds)
+	}
+	if d.DSR != nil {
+		dsrHandlers(mux, d.DSR)
+	}
+	if d.Identity != nil {
+		authDeps := AuthDeps{
+			Identity: d.Identity,
+			Email:    d.Email,
+			Config:   d.AuthCfg,
+		}
+		authHandlers(mux, authDeps)
+		teamHandlers(mux, authDeps)
+	}
+	if d.Connections != nil && d.ConnRegistry != nil {
+		connectionHandlers(mux, ConnectionDeps{
+			Connections: d.Connections,
+			Vault:       d.Vault,
+			Registry:    d.ConnRegistry,
+			Enqueuer:    enq,
+		})
+	}
+	if d.Pipelines != nil && d.Logs != nil {
+		runLogsHandlers(mux, d.Pipelines, d.Logs)
+	}
+	if d.ColumnLineage != nil {
+		columnLineageHandlers(mux, d.ColumnLineage)
+	}
+	if d.Glossary != nil {
+		glossaryHandlers(mux, d.Glossary)
+	}
+	if d.Classifier != nil || d.Classifications != nil {
+		classifyHandlers(mux, d.Classifier, d.Classifications, d.Jobs, enq)
+	}
+	if d.Jobs != nil {
+		jobsHandlers(mux, d.Jobs)
+	}
+	if d.AIProviders != nil {
+		aiProviderHandlers(mux, d.AIProviders, d.Vault)
+	}
+	if d.Catalog != nil && d.Policies != nil {
+		accessHandlers(mux, d.Catalog, d.Policies, d.Identity)
+	}
+	if d.Catalog != nil {
+		mountMCP(mux, d)
+	}
+	if d.SearchIndexer != nil && d.SearchSearcher != nil {
+		semanticHandlers(mux, d.SearchIndexer, d.SearchSearcher, d.Policies, d.Jobs, enq)
+	}
+	mux.HandleFunc("GET /v1/stats", statsHandler(StatsDeps{
+		Catalog:     d.Catalog,
+		Pipelines:   d.Pipelines,
+		Quality:     d.Quality,
+		Deleted:     d.Deleted,
+		LegalHolds:  d.LegalHolds,
+		DSR:         d.DSR,
+		Connections: d.Connections,
+	}))
+	return mux
+}
+
+// buildRestorers wires per-type restore functions for the recycle-bin
+// endpoint. Each restorer re-INSERTs the tombstoned payload onto its
+// source table. Domains without a Repo registered get no restorer (the
+// recycle-bin handler returns 400 unsupported).
+func buildRestorers(d Deps) map[string]Restorer {
+	r := map[string]Restorer{}
+	if d.Pipelines != nil {
+		r["pipeline"] = pipelineRestorer(d.Pipelines)
+	}
+	if d.Quality != nil {
+		r["check"] = checkRestorer(d.Quality)
+	}
+	if d.Policies != nil {
+		r["policy"] = policyRestorer(d.Policies)
+	}
+	return r
+}
+
+// Mux is the legacy constructor: catalog-only. Prefer NewMux for new
+// callers that need the orchestration / quality / notify / policy routes.
+func Mux(store storage.Store) *http.ServeMux {
+	return NewMux(Deps{Catalog: store})
+}
+
+func registerCatalog(mux *http.ServeMux, store storage.Store) {
 	mux.HandleFunc("GET /v1/assets",                     listAssetsHandler(store))
 	mux.HandleFunc("POST /v1/assets",                    createAssetHandler(store))
 	mux.HandleFunc("GET /v1/assets/{id}",                getAssetHandler(store))
@@ -28,10 +211,7 @@ func Mux(store storage.Store) *http.ServeMux {
 	mux.HandleFunc("DELETE /v1/assets/{id}",             deleteAssetHandler(store))
 	mux.HandleFunc("GET /v1/assets:byQualifiedName",     getByQNHandler(store))
 	mux.HandleFunc("POST /v1/assets:search",             searchAssetsHandler(store))
-
 	mux.HandleFunc("GET /v1/assets/{id}/lineage",        lineageHandler(store))
-
-	return mux
 }
 
 // ----- response helpers -----

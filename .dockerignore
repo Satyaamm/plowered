@@ -1,0 +1,39 @@
+# Build hygiene — keep contexts small and predictable.
+# The Go images need everything but node_modules + binaries; the web
+# image needs only `web/`.
+
+# Local dev artifacts
+bin/
+dist/
+**/*.test
+**/*.out
+**/*.prof
+.air.toml
+.envrc
+.env
+.env.*
+!.env.example
+web/.env.local
+web/.env.*
+!web/.env.example
+
+# Node — re-installed in the web Dockerfile's deps stage
+web/node_modules
+web/.next
+web/.turbo
+web/out
+web/coverage
+
+# IDE / OS noise
+.idea
+.vscode
+.DS_Store
+
+# Git metadata is not needed inside the build sandbox
+.git
+.github
+
+# Existing artifacts that aren't part of the source build
+proto/gen
+deploy/helm
+data/

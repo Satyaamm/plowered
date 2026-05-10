@@ -18,15 +18,66 @@ import (
 
 	apihttp "github.com/Satyaamm/plowered/internal/api/http"
 	"github.com/Satyaamm/plowered/internal/api/middleware"
+	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/audit"
 	"github.com/Satyaamm/plowered/internal/core/auth"
+	"github.com/Satyaamm/plowered/internal/core/deleted"
+	"github.com/Satyaamm/plowered/internal/core/dsr"
+	"github.com/Satyaamm/plowered/internal/core/events"
+	"github.com/Satyaamm/plowered/internal/core/connection"
+	"github.com/Satyaamm/plowered/internal/core/email"
+	"github.com/Satyaamm/plowered/internal/core/glossary"
+	"github.com/Satyaamm/plowered/internal/core/identity"
+	"github.com/Satyaamm/plowered/internal/core/jobs"
+	"github.com/Satyaamm/plowered/internal/core/legalhold"
+	"github.com/Satyaamm/plowered/internal/core/notify"
+	"github.com/Satyaamm/plowered/internal/core/outbox"
+	"github.com/Satyaamm/plowered/internal/core/secrets"
+	"github.com/Satyaamm/plowered/internal/core/pipeline"
+	"github.com/Satyaamm/plowered/internal/core/policy"
+	"github.com/Satyaamm/plowered/internal/core/quality"
+	"github.com/Satyaamm/plowered/internal/core/search"
+	"github.com/Satyaamm/plowered/internal/obs"
 	"github.com/Satyaamm/plowered/internal/storage"
+	"github.com/Satyaamm/plowered/internal/worker"
 )
 
 // Deps bundles concrete dependencies the server needs at construction time.
+// Catalog Store is required; the orchestration repos are optional — pass nil
+// to skip registering those routes.
 type Deps struct {
-	Logger *slog.Logger
-	Store  storage.Store
-	Auth   middleware.AuthConfig
+	Logger    *slog.Logger
+	Store     storage.Store
+	Auth      middleware.AuthConfig
+	Pipelines pipeline.Repo
+	Quality   quality.Store
+	Notify    notify.Repo
+	Policies  policy.RuleRepo
+	Audit       audit.Reader
+	AuditWriter audit.Writer
+	Deleted     deleted.Repo
+	LegalHolds  legalhold.Repo
+	DSR         dsr.Repo
+	Identity    identity.Repo
+	Email       email.Sender
+	AuthCfg     apihttp.AuthConfig
+	Connections connection.Repo
+	ConnRegistry *connection.Registry
+	Vault       secrets.Vault
+	OutboxWriter outbox.Writer
+	OutboxReader outbox.Reader
+	Enqueuer    worker.Enqueuer
+	Events    events.Bus // optional; wired so the metrics recorder can subscribe
+	Metrics   *obs.Metrics // optional; when nil, /metrics is not exposed
+	Logs      pipeline.LogReader // optional; powers /v1/runs/{id}/logs and the SSE tail
+	ColumnLineage apihttp.ColumnLineageReader // optional
+	Glossary  glossary.Repo // optional; powers /v1/glossary/*
+	Classifier      apihttp.Classifier
+	Classifications apihttp.ClassificationReader
+	SearchIndexer   *search.Indexer
+	SearchSearcher  *search.Searcher
+	Jobs            jobs.Repo
+	AIProviders     aiprovider.Repo
 }
 
 // Run starts both listeners and blocks until ctx is cancelled.
@@ -36,6 +87,9 @@ func Run(ctx context.Context, cfg Config, deps Deps) error {
 	}
 	if deps.Store == nil {
 		return errors.New("server: Store dependency required")
+	}
+	if deps.Metrics != nil && deps.Events != nil {
+		deps.Events.Subscribe(obs.EventRecorder{M: deps.Metrics})
 	}
 
 	health := newHealthState()
@@ -131,22 +185,77 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 	mux := nethttp.NewServeMux()
 	mux.Handle("/healthz", healthHandler(health, cfg.Version))
 	mux.Handle("/readyz", healthHandler(health, cfg.Version))
+	if deps.Metrics != nil {
+		mux.Handle("/metrics", deps.Metrics.Handler())
+	}
+	// Public docs: OpenAPI spec + Swagger UI. Not under /v1/ so the
+	// auth chain skips them by default.
+	apihttp.DocsHandlers(mux)
 
-	apiMux := apihttp.Mux(deps.Store)
-	apiMux.HandleFunc("POST /v1/signup", apihttp.SignupHandler(apihttp.SignupConfig{
-		AuthConfig: deps.Auth,
-	}))
-
-	skipAuth := []string{"/healthz", "/readyz", "/v1/signup"}
+	apiMux := apihttp.NewMux(apihttp.Deps{
+		Catalog:   deps.Store,
+		Pipelines: deps.Pipelines,
+		Quality:   deps.Quality,
+		Notify:    deps.Notify,
+		Policies:  deps.Policies,
+		Audit:       deps.Audit,
+		AuditWriter: deps.AuditWriter,
+		Deleted:     deps.Deleted,
+		LegalHolds:  deps.LegalHolds,
+		DSR:         deps.DSR,
+		Identity:    deps.Identity,
+		Email:       deps.Email,
+		AuthCfg:     deps.AuthCfg,
+		Connections: deps.Connections,
+		ConnRegistry: deps.ConnRegistry,
+		Vault:       deps.Vault,
+		Enqueuer:    deps.Enqueuer,
+		Logs:        deps.Logs,
+		ColumnLineage: deps.ColumnLineage,
+		Glossary:    deps.Glossary,
+		Classifier:        deps.Classifier,
+		Classifications:   deps.Classifications,
+		SearchIndexer:     deps.SearchIndexer,
+		SearchSearcher:    deps.SearchSearcher,
+		Jobs:              deps.Jobs,
+		AIProviders:       deps.AIProviders,
+	})
+	// Public endpoints — never require auth. /v1/auth/me + /v1/auth/logout
+	// deliberately omitted: those need an active session.
+	skipAuth := []string{
+		"/healthz",
+		"/readyz",
+		"/metrics",
+		"/v1/auth/signup",
+		"/v1/auth/login",
+		"/v1/auth/verify",
+		"/v1/auth/resend-verification",
+		"/v1/auth/invite-info",
+		"/v1/auth/accept-invite",
+	}
 	verify := buildHTTPVerifier(deps.Auth)
+
+	// Pick session-aware auth when identity is wired; fall back to bearer-only
+	// AuthMW for memory-mode dev (no DB → no sessions).
+	var authMW apihttp.Middleware
+	if deps.Identity != nil {
+		authMW = apihttp.SessionAuthMW(deps.Identity, deps.AuthCfg.CookieName, verify, skipAuth...)
+	} else {
+		authMW = apihttp.AuthMW(verify, skipAuth...)
+	}
+
 	chain := apihttp.Chain(apiMux,
 		apihttp.RecoveryMW(deps.Logger),
 		apihttp.RequestIDMW(),
 		apihttp.LoggingMW(deps.Logger),
 		apihttp.CORSMW(splitCSV(cfg.CORSAllowedOrigins)),
-		apihttp.AuthMW(verify, skipAuth...),
+		authMW,
 		apihttp.TenantMW(skipAuth...),
+		apihttp.AuditMW(deps.AuditWriter, "plowered", cfg.Version, skipAuth...),
 	)
+	if deps.Metrics != nil {
+		chain = deps.Metrics.HTTPMiddleware(chain)
+	}
 	mux.Handle("/v1/", chain)
 	return mux
 }

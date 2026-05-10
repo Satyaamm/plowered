@@ -22,12 +22,12 @@ CREATE TABLE IF NOT EXISTS assets (
     UNIQUE (tenant_id, qualified_name)
 );
 
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE INDEX IF NOT EXISTS idx_assets_tenant_type        ON assets (tenant_id, type);
 CREATE INDEX IF NOT EXISTS idx_assets_tenant_updated_at  ON assets (tenant_id, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_assets_tenant_qn_trgm
-    ON assets USING gin (tenant_id, qualified_name gin_trgm_ops);
-
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_assets_qn_trgm
+    ON assets USING gin (qualified_name gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS edges (
     id           UUID         PRIMARY KEY,

@@ -43,6 +43,13 @@ export function Header({ appName }: { appName: string }) {
         <nav className={styles.nav}>
           <Link href="/" className={styles.link}><Text>Home</Text></Link>
           <Link href="/search" className={styles.link}><Text>Search</Text></Link>
+          <Link href="/pipelines" className={styles.link}><Text>Pipelines</Text></Link>
+          <Link href="/runs" className={styles.link}><Text>Runs</Text></Link>
+          <Link href="/checks" className={styles.link}><Text>Checks</Text></Link>
+          <Link href="/alerts" className={styles.link}><Text>Alerts</Text></Link>
+          <Link href="/admin/policies" className={styles.link}><Text>Policies</Text></Link>
+          <Link href="/admin/audit" className={styles.link}><Text>Audit</Text></Link>
+          <Link href="/admin/deleted" className={styles.link}><Text>Recycle bin</Text></Link>
         </nav>
       </div>
     </header>

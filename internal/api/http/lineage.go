@@ -34,6 +34,21 @@ func lineageHandler(store storage.Store) http.HandlerFunc {
 		if direction == "" {
 			direction = "upstream"
 		}
+		// Optional `kind` filters to a single edge kind (lineage, defines, etc).
+		// Empty string means "any kind" — useful for the Schema tab and the
+		// asset detail "children" view, which want both lineage and contains
+		// edges in a single response.
+		kind := graph.EdgeKind(r.URL.Query().Get("kind"))
+		if kind == "" {
+			// Back-compat default: callers that omit the param get lineage,
+			// matching the v0 behaviour. New callers (Schema tab) pass kind=
+			// explicitly.
+			if r.URL.Query().Has("kind") {
+				kind = ""
+			} else {
+				kind = graph.EdgeLineage
+			}
+		}
 		depth := 1
 		if s := r.URL.Query().Get("depth"); s != "" {
 			if n, err := strconv.Atoi(s); err == nil {
@@ -60,18 +75,18 @@ func lineageHandler(store storage.Store) http.HandlerFunc {
 		switch direction {
 		case "downstream":
 			edges, err = store.Neighbors(r.Context(), root.ID, storage.NeighborsOptions{
-				Kind: graph.EdgeLineage, Outgoing: true, Limit: 500,
+				Kind: kind, Outgoing: true, Limit: 500,
 			})
 		case "both":
 			up, errU := store.Neighbors(r.Context(), root.ID, storage.NeighborsOptions{
-				Kind: graph.EdgeLineage, Outgoing: false, Limit: 500,
+				Kind: kind, Outgoing: false, Limit: 500,
 			})
 			if errU != nil {
 				writeError(w, errU)
 				return
 			}
 			down, errD := store.Neighbors(r.Context(), root.ID, storage.NeighborsOptions{
-				Kind: graph.EdgeLineage, Outgoing: true, Limit: 500,
+				Kind: kind, Outgoing: true, Limit: 500,
 			})
 			if errD != nil {
 				writeError(w, errD)
@@ -80,7 +95,7 @@ func lineageHandler(store storage.Store) http.HandlerFunc {
 			edges = append(up, down...)
 		default: // "upstream"
 			edges, err = store.Neighbors(r.Context(), root.ID, storage.NeighborsOptions{
-				Kind: graph.EdgeLineage, Outgoing: false, Limit: 500,
+				Kind: kind, Outgoing: false, Limit: 500,
 			})
 		}
 		if err != nil {

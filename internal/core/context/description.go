@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/Satyaamm/plowered/internal/core/auth"
-	"github.com/Satyaamm/plowered/internal/core/graph"
 	"github.com/Satyaamm/plowered/pkg/llm"
 )
 

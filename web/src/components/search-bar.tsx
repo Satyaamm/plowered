@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Input, Button, makeStyles } from "@fluentui/react-components";
 import { Search24Regular } from "@fluentui/react-icons";
@@ -18,8 +18,7 @@ const useStyles = makeStyles({
 export function SearchBar({ initial = "" }: { initial?: string }) {
   const styles = useStyles();
   const router = useRouter();
-  const params = useSearchParams();
-  const [q, setQ] = useState(initial || params.get("q") || "");
+  const [q, setQ] = useState(initial);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();

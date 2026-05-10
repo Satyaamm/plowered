@@ -3,6 +3,7 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"testing"
 
 	"github.com/Satyaamm/plowered/pkg/mcp"
@@ -34,9 +35,6 @@ func (m *memoryTransport) Write(_ context.Context, msg *mcp.Message) error {
 func (m *memoryTransport) Close() error { return nil }
 
 var errEOF = io.EOF
-
-// import without cycle by aliasing
-import "io"
 
 func TestInitializeAndToolsList(t *testing.T) {
 	srv := mcp.NewServer(mcp.ServerInfo{Name: "plowered-mcp", Version: "test"})

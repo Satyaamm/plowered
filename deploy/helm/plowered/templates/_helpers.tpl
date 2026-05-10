@@ -49,6 +49,16 @@ Image reference, defaulting tag to the chart's appVersion.
 {{- end -}}
 
 {{/*
+Worker image reference. Defaults to "<image.repository>-worker" if no
+override is set; tag inherits from chart appVersion when blank.
+*/}}
+{{- define "plowered.workerImage" -}}
+{{- $repo := default (printf "%s-worker" .Values.image.repository) .Values.workerImage.repository -}}
+{{- $tag  := default .Chart.AppVersion (default .Values.image.tag .Values.workerImage.tag) -}}
+{{- printf "%s/%s:%s" .Values.image.registry $repo $tag -}}
+{{- end -}}
+
+{{/*
 Name of the Secret containing PLOWERED_* env values.
 */}}
 {{- define "plowered.secretName" -}}

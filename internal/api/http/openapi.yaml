@@ -1,0 +1,1185 @@
+openapi: 3.1.0
+info:
+  title: Plowered API
+  version: "1.0.0"
+  description: |
+    Plowered is a self-hosted, AI-native data context platform: catalog,
+    orchestration, quality, governance, lineage, ETL/ELT, MCP, all in one.
+
+    All endpoints sit behind the same auth chain — session cookie (web UI)
+    or Bearer JWT (integrations). Tenant isolation is enforced server-side
+    from the authenticated principal; you never pass tenant_id in payloads
+    or query strings.
+
+    Identifiers throughout are UUIDs unless documented otherwise.
+  contact:
+    name: Plowered
+    url: https://github.com/Satyaamm/plowered
+
+servers:
+  - url: http://localhost:8080
+    description: Local dev
+
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+
+tags:
+  - name: auth
+    description: Sign up, sign in, verify email.
+  - name: catalog
+    description: Assets, search, lineage.
+  - name: connections
+    description: Customer datasources + crawl/test/classify.
+  - name: orchestration
+    description: Pipelines, runs, task runs, run logs (SSE).
+  - name: quality
+    description: Data-quality checks and their run history.
+  - name: governance
+    description: Policies, glossary, access viewer, classifications.
+  - name: ai
+    description: MCP server + semantic search.
+
+paths:
+  # ---------- auth ----------
+  /v1/auth/signup:
+    post:
+      tags: [auth]
+      summary: Create a workspace + first user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "202":
+          description: Workspace created; verification email sent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignupResponse" }
+        "400": { description: Validation failed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Email or workspace slug already in use }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange credentials for a session cookie
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Logged in; session cookie set
+          headers:
+            Set-Cookie: { schema: { type: string } }
+        "401": { description: Invalid credentials or unverified email }
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current session
+      responses:
+        "204": { description: Logged out }
+
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Return the authenticated principal
+      responses:
+        "200":
+          description: Principal info
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Principal" }
+        "401": { description: Not signed in }
+
+  /v1/auth/verify:
+    get:
+      tags: [auth]
+      summary: Consume an email-verification token
+      security: []
+      parameters:
+        - in: query
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Email verified }
+        "400": { description: Invalid or expired token }
+
+  # ---------- catalog ----------
+  /v1/assets:
+    get:
+      tags: [catalog]
+      summary: List assets (paginated)
+      parameters:
+        - in: query
+          name: type
+          schema: { type: string, enum: [database, schema, table, view, column, dashboard, report, dbt_model, dag, ml_model, glossary_term] }
+        - in: query
+          name: page_size
+          schema: { type: integer, default: 50, maximum: 500 }
+        - in: query
+          name: page_token
+          schema: { type: string }
+      responses:
+        "200":
+          description: Asset page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assets:
+                    type: array
+                    items: { $ref: "#/components/schemas/Asset" }
+                  next_page_token: { type: string }
+    post:
+      tags: [catalog]
+      summary: Upsert an asset by qualified_name
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Asset" } } }
+      responses:
+        "201": { description: Asset created or replaced }
+
+  /v1/assets/{id}:
+    get:
+      tags: [catalog]
+      summary: Get an asset by UUID
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Asset, content: { application/json: { schema: { $ref: "#/components/schemas/Asset" } } } }
+        "404": { description: Not found }
+
+  /v1/assets/{id}/lineage:
+    get:
+      tags: [catalog]
+      summary: Get neighbouring lineage edges
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: direction, in: query, schema: { type: string, enum: [upstream, downstream, both], default: both } }
+        - { name: depth, in: query, schema: { type: integer, default: 2, maximum: 5 } }
+        - { name: kind, in: query, schema: { type: string, enum: [defines, lineage] } }
+      responses:
+        "200": { description: Neighbourhood }
+
+  /v1/assets/{id}/column-lineage:
+    get:
+      tags: [catalog]
+      summary: Column-level lineage in/out of an asset
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: Edges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  edges:
+                    type: array
+                    items: { $ref: "#/components/schemas/ColumnLineageEdge" }
+
+  /v1/assets/{id}/classifications:
+    get:
+      tags: [governance]
+      summary: Detected classifications for an asset
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: Tag list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  classifications: { type: array, items: { type: string } }
+
+  /v1/assets/{id}/terms:
+    get:
+      tags: [governance]
+      summary: Glossary terms linked to an asset
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Term list }
+
+  /v1/assets:byQualifiedName:
+    get:
+      tags: [catalog]
+      summary: Get an asset by qualified name
+      parameters:
+        - { name: qn, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Asset, content: { application/json: { schema: { $ref: "#/components/schemas/Asset" } } } }
+        "404": { description: Not found }
+
+  /v1/assets:search:
+    post:
+      tags: [catalog]
+      summary: Keyword search across qualified names
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                limit: { type: integer, default: 20, maximum: 200 }
+                type: { type: string }
+      responses:
+        "200": { description: Hits }
+
+  # ---------- search (semantic) ----------
+  /v1/search:semantic:
+    post:
+      tags: [ai]
+      summary: Vector-similarity search filtered by policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                k: { type: integer, default: 20, maximum: 100 }
+      responses:
+        "200":
+          description: Ranked hits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query: { type: string }
+                  hits:
+                    type: array
+                    items: { $ref: "#/components/schemas/SemanticHit" }
+
+  /v1/search:reindex:
+    post:
+      tags: [ai]
+      summary: Re-embed every asset in the tenant
+      description: |
+        When the platform is wired with a Jobs repo + Asynq enqueuer
+        (production), returns 202 + a job_id and the actual reindex runs
+        on a worker. Poll /v1/jobs/{id} for progress + final result. In
+        embedded/dev mode (no jobs wiring) the endpoint runs synchronously
+        and returns the legacy 200 + {reindexed, model} body.
+      responses:
+        "200":
+          description: Reindex summary (legacy synchronous path)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reindexed: { type: integer }
+                  model: { type: string }
+        "202":
+          description: Queued — poll /v1/jobs/{id}
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string, format: uuid }
+                  status: { type: string }
+                  model:  { type: string }
+
+  # ---------- connections ----------
+  /v1/connections:
+    get:
+      tags: [connections]
+      summary: List configured datasource connections
+      responses:
+        "200": { description: Connections }
+    post:
+      tags: [connections]
+      summary: Create a new connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, config]
+              properties:
+                name: { type: string }
+                type: { type: string, enum: [postgres, snowflake, bigquery, redshift, databricks, mysql] }
+                config: { type: object, additionalProperties: true }
+                password: { type: string, writeOnly: true }
+      responses:
+        "201": { description: Created }
+
+  /v1/connections/{id}:
+    patch:
+      tags: [connections]
+      summary: Update a connection
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [connections]
+      summary: Delete a connection (and revoke its vault secret)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "204": { description: Deleted } }
+
+  /v1/connections/{id}/test:
+    post:
+      tags: [connections]
+      summary: Smoke-test connectivity
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Reachable }
+        "424": { description: Unreachable / bad credentials }
+
+  /v1/connections/{id}/crawl:
+    post:
+      tags: [connections]
+      summary: Enqueue a schema crawl
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "202": { description: Queued }
+
+  /v1/connections/{id}/classify:
+    post:
+      tags: [governance]
+      summary: Sample row values and auto-classify columns
+      description: |
+        Production path: enqueues a classify:connection job and returns
+        202 + job_id. Poll /v1/jobs/{id} for progress + the final
+        {tables, columns, tagged, skipped} result. Legacy sync mode
+        (no jobs wiring) keeps the original 200 + result body.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: Classification summary (legacy synchronous path)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tables:  { type: integer }
+                  columns: { type: integer }
+                  tagged:  { type: integer }
+                  skipped: { type: integer }
+        "202":
+          description: Queued — poll /v1/jobs/{id}
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:      { type: string, format: uuid }
+                  status:      { type: string }
+                  resource_id: { type: string, format: uuid }
+
+  /v1/jobs:
+    get:
+      tags: [orchestration]
+      summary: List recent async jobs for the tenant
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Recent jobs, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items: { $ref: "#/components/schemas/Job" }
+
+  /v1/jobs/{id}:
+    get:
+      tags: [orchestration]
+      summary: Fetch one async job by ID
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: Job record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { description: Not found }
+
+  # ---------- BYOM: bring-your-own-model provider configs ----------
+  /v1/ai/providers:
+    get:
+      tags: [ai]
+      summary: List the tenant's configured AI providers
+      responses:
+        "200":
+          description: Configured providers (api keys redacted)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items: { $ref: "#/components/schemas/AIProvider" }
+    post:
+      tags: [ai]
+      summary: Register a new AI provider and store its api key sealed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIProviderRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIProvider" }
+
+  /v1/ai/providers/{id}:
+    patch:
+      tags: [ai]
+      summary: Update metadata or rotate the api key
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIProviderRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIProvider" }
+    delete:
+      tags: [ai]
+      summary: Delete a provider config and revoke its vault key
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "204": { description: Deleted }
+
+  /v1/ai/providers/{id}/test:
+    post:
+      tags: [ai]
+      summary: Re-probe the stored credentials
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Credentials valid }
+        "424": { description: Credentials rejected by upstream }
+
+  /v1/ai/providers/{id}/primary:
+    post:
+      tags: [ai]
+      summary: Mark this config as the tenant default for its capability
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "204": { description: Set as primary }
+
+  # ---------- team / memberships ----------
+  /v1/members:
+    get:
+      tags: [auth]
+      summary: List all members of the caller's workspace
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members: { type: array, items: { $ref: "#/components/schemas/Member" } }
+
+  /v1/members/{user_id}:
+    patch:
+      tags: [auth]
+      summary: Change a member's roles (admin only)
+      parameters: [{ name: user_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles: { type: array, items: { type: string, enum: [viewer, editor, steward, admin] } }
+      responses:
+        "200": { description: Updated }
+    delete:
+      tags: [auth]
+      summary: Remove a member (admin only; cannot self-remove)
+      parameters: [{ name: user_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "204": { description: Removed }
+        "400": { description: Self-remove blocked }
+
+  /v1/invites:
+    get:
+      tags: [auth]
+      summary: List pending invites for the caller's workspace
+      parameters:
+        - name: include
+          in: query
+          description: "Set to 'all' to include accepted/revoked/expired."
+          schema: { type: string, enum: [all] }
+      responses:
+        "200":
+          description: Invites
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invites: { type: array, items: { $ref: "#/components/schemas/Invite" } }
+    post:
+      tags: [auth]
+      summary: Send a teammate invitation (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, roles]
+              properties:
+                email: { type: string, format: email }
+                roles: { type: array, items: { type: string, enum: [viewer, editor, steward, admin] } }
+      responses:
+        "201":
+          description: Invite created and emailed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invite" }
+
+  /v1/invites/{id}:
+    delete:
+      tags: [auth]
+      summary: Revoke a pending invite (admin only)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "204": { description: Revoked }
+
+  /v1/auth/invite-info:
+    get:
+      tags: [auth]
+      summary: Public preview of an invite by its token
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Invite preview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:          { type: string, format: email }
+                  workspace_name: { type: string }
+                  roles:          { type: array, items: { type: string } }
+        "404": { description: Token unknown }
+        "410": { description: Invite expired or used }
+
+  /v1/auth/accept-invite:
+    post:
+      tags: [auth]
+      summary: Accept an invite — creates user (if needed) + membership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:      { type: string }
+                password:   { type: string, minLength: 8 }
+                first_name: { type: string }
+                last_name:  { type: string }
+      responses:
+        "200":
+          description: Joined
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:    { type: string, enum: [joined] }
+                  tenant_id: { type: string, format: uuid }
+                  user_id:   { type: string, format: uuid }
+
+  /v1/ai/providers:test:
+    post:
+      tags: [ai]
+      summary: Pre-save credential probe (no persistence)
+      description: |
+        Powers the settings page's "Test" button. The body carries the
+        same shape as POST /v1/ai/providers including the api_key. The
+        platform never persists what is sent here; it only runs a cheap
+        upstream call (GET /v1/models for OpenAI-style, same for
+        Anthropic) and returns ok=true on a 2xx.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIProviderRequest" }
+      responses:
+        "200": { description: Credentials valid }
+        "424": { description: Credentials rejected by upstream }
+
+  # ---------- orchestration ----------
+  /v1/pipelines:
+    get:
+      tags: [orchestration]
+      summary: List pipelines
+      responses: { "200": { description: Pipelines } }
+    post:
+      tags: [orchestration]
+      summary: Create a pipeline (DAG)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Pipeline" } } }
+      responses:
+        "201": { description: Created }
+
+  /v1/pipelines/{id}:
+    get:
+      tags: [orchestration]
+      summary: Get a pipeline
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Pipeline } }
+    patch:
+      tags: [orchestration]
+      summary: Replace pipeline definition (and re-validate the DAG)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [orchestration]
+      summary: Tombstone a pipeline (recycle bin retains 30 days)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "204": { description: Deleted } }
+
+  /v1/pipelines/{id}/trigger:
+    post:
+      tags: [orchestration]
+      summary: Manually trigger a run
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "202":
+          description: Run queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+
+  /v1/runs:
+    get:
+      tags: [orchestration]
+      summary: List runs (most recent first)
+      parameters:
+        - { name: pipeline_id, in: query, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses: { "200": { description: Runs } }
+
+  /v1/runs/{id}:
+    get:
+      tags: [orchestration]
+      summary: Get a run
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Run, content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } } }
+
+  /v1/runs/{id}/tasks:
+    get:
+      tags: [orchestration]
+      summary: Per-task run statuses for one pipeline run
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Task runs } }
+
+  /v1/runs/{id}/logs:
+    get:
+      tags: [orchestration]
+      summary: Paginated executor logs
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: since, in: query, schema: { type: integer, default: 0 }, description: "Tail cursor — pass the previous batch's max id" }
+        - { name: limit, in: query, schema: { type: integer, default: 200, maximum: 1000 } }
+      responses: { "200": { description: Lines } }
+
+  /v1/runs/{id}/logs/stream:
+    get:
+      tags: [orchestration]
+      summary: SSE live log tail
+      description: |
+        Server-Sent Events stream. Each `data:` payload is a JSON log line.
+        Emits `event: done` once the run reaches a terminal state.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: text/event-stream
+          content: { text/event-stream: { schema: { type: string } } }
+
+  # ---------- quality ----------
+  /v1/checks:
+    get:
+      tags: [quality]
+      summary: List checks (optionally filtered by asset)
+      parameters: [{ name: asset_id, in: query, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Checks } }
+    post:
+      tags: [quality]
+      summary: Create a quality check
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Check" } } }
+      responses: { "201": { description: Created } }
+
+  /v1/checks/{id}:
+    get:
+      tags: [quality]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Check } }
+    patch:
+      tags: [quality]
+      summary: Update a check
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [quality]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "204": { description: Deleted } }
+
+  /v1/checks/{id}/run:
+    post:
+      tags: [quality]
+      summary: Trigger a check run now
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "202": { description: Queued } }
+
+  /v1/checks/{id}/runs:
+    get:
+      tags: [quality]
+      summary: Check-run history
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses: { "200": { description: Runs } }
+
+  # ---------- governance ----------
+  /v1/glossary/terms:
+    get:
+      tags: [governance]
+      summary: List business glossary terms
+      responses: { "200": { description: Terms } }
+    post:
+      tags: [governance]
+      summary: Create a term
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/GlossaryTerm" } } }
+      responses: { "201": { description: Created } }
+
+  /v1/glossary/terms/{id}:
+    get:
+      tags: [governance]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Term } }
+    patch:
+      tags: [governance]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [governance]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "204": { description: Deleted } }
+
+  /v1/glossary/terms/{id}/assignments:
+    post:
+      tags: [governance]
+      summary: Link a term to an asset
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [asset_id]
+              properties:
+                asset_id: { type: string, format: uuid }
+      responses: { "204": { description: Linked } }
+
+  /v1/policies:
+    get:
+      tags: [governance]
+      summary: List policy rules
+      responses: { "200": { description: Rules } }
+    post:
+      tags: [governance]
+      summary: Add a policy rule (allow / deny + conditions)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                Effect: { type: string, enum: [allow, deny] }
+                Verbs:  { type: array, items: { type: string, enum: [read, edit, propose, certify, delete, run, admin, purge] } }
+                Conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      Type:  { type: string, enum: [principal.role, principal.group, resource.tag, resource.owner] }
+                      Value: { type: string }
+      responses: { "201": { description: Created } }
+
+  /v1/access/preview:
+    post:
+      tags: [governance]
+      summary: "Preview: what can principal X see right now?"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:   { type: string }
+                groups: { type: array, items: { type: string } }
+                email:  { type: string, format: email, description: "Impersonate a real user; honours their actual roles/groups" }
+                verb:   { type: string, default: read }
+                limit:  { type: integer, default: 500 }
+      responses: { "200": { description: Visible / denied breakdown } }
+
+  # ---------- ai ----------
+  /v1/mcp:
+    post:
+      tags: [ai]
+      summary: JSON-RPC 2.0 endpoint for MCP-compliant agents
+      description: |
+        Tools available:
+          - search_assets(query, limit)
+          - get_asset(qualified_name)
+          - get_lineage(qualified_name, direction, depth)
+
+        All results are policy-filtered; every call writes one
+        `audit_events` row with action=`mcp.<tool>`, denied counts, and
+        the args. The same session auth as the rest of the API applies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: { type: string, enum: ["2.0"] }
+                id:      { oneOf: [{ type: string }, { type: integer }] }
+                method:  { type: string, enum: [initialize, tools/list, tools/call] }
+                params:  { type: object }
+      responses:
+        "200":
+          description: JSON-RPC response body
+
+  # ---------- stats ----------
+  /v1/stats:
+    get:
+      tags: [catalog]
+      summary: Single-shot rollup powering the home dashboard
+      responses:
+        "200":
+          description: Counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  catalog: { type: object }
+                  pipelines: { type: integer }
+                  checks: { type: integer }
+                  failing_checks: { type: integer }
+                  deleted_active: { type: integer }
+                  holds_active:   { type: integer }
+                  dsr_open:       { type: integer }
+                  connections:    { type: integer }
+                  healthy_connections: { type: integer }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: plowered_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:    { type: string }
+        message: { type: string }
+
+    Principal:
+      type: object
+      properties:
+        user_id:   { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        email:     { type: string, format: email }
+        full_name: { type: string }
+        roles:     { type: array, items: { type: string } }
+        groups:    { type: array, items: { type: string } }
+        email_verified: { type: boolean }
+
+    SignupRequest:
+      type: object
+      required: [email, password, workspace_name]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 256
+          description: "Trimmed + lowercased server-side. Must contain @ and a dot."
+        password:
+          type: string
+          minLength: 8
+          maxLength: 256
+          writeOnly: true
+          description: "8+ chars and at least 3 of: lowercase, uppercase, digit, symbol."
+        confirm_password:
+          type: string
+          writeOnly: true
+          description: "Optional; if supplied must equal password."
+        first_name:
+          type: string
+          maxLength: 64
+          description: "Unicode letters / marks / spaces / apostrophes / hyphens / dots. No digits."
+        last_name:
+          type: string
+          maxLength: 64
+          description: "Unicode letters / marks / spaces / apostrophes / hyphens / dots. No digits."
+        phone:
+          type: string
+          pattern: "^[0-9 \\-]{6,20}$"
+          description: "Subscriber digits only (6–15 after stripping separators). Optional."
+        phone_country:
+          type: string
+          pattern: "^\\+\\d{1,4}$"
+          description: "Dial code, e.g. +1 or +91. Required when phone is set."
+        workspace_name:
+          type: string
+          minLength: 2
+          maxLength: 64
+        workspace_slug:
+          type: string
+          description: "Optional; auto-generated from name when blank."
+        accept_terms:
+          type: boolean
+          description: "UI gate; server treats absence as acceptance for legacy clients."
+
+    SignupResponse:
+      type: object
+      properties:
+        tenant_id: { type: string, format: uuid }
+        user_id:   { type: string, format: uuid }
+        status:    { type: string, enum: [pending_verification] }
+        message:   { type: string }
+
+    Job:
+      type: object
+      properties:
+        id:           { type: string, format: uuid }
+        type:         { type: string, description: "e.g. classify:connection, search:reindex" }
+        status:       { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+        progress_pct: { type: integer, minimum: 0, maximum: 100 }
+        message:      { type: string }
+        result:       { type: object, additionalProperties: true }
+        error:        { type: string }
+        resource_id:  { type: string }
+        actor_id:     { type: string }
+        created_at:   { type: string, format: date-time }
+        started_at:   { type: string, format: date-time, nullable: true }
+        finished_at:  { type: string, format: date-time, nullable: true }
+
+    AIProvider:
+      type: object
+      properties:
+        id:               { type: string, format: uuid }
+        kind:             { type: string, enum: [anthropic, openai, deepseek, openai-compatible] }
+        name:             { type: string }
+        model:            { type: string }
+        base_url:         { type: string }
+        is_primary:       { type: boolean }
+        capability:       { type: string, enum: [chat, embed] }
+        created_at:       { type: string, format: date-time }
+        updated_at:       { type: string, format: date-time }
+        last_tested_at:   { type: string, format: date-time, nullable: true }
+        last_test_ok:     { type: boolean }
+        last_test_error:  { type: string }
+
+    AIProviderRequest:
+      type: object
+      required: [kind, name, model, capability]
+      properties:
+        kind:       { type: string, enum: [anthropic, openai, deepseek, openai-compatible] }
+        name:       { type: string, maxLength: 64 }
+        model:      { type: string, description: "Provider-specific model id (e.g. claude-sonnet-4-6, gpt-4o-mini)" }
+        base_url:   { type: string, description: "Required for openai-compatible; optional override for the others" }
+        api_key:    { type: string, writeOnly: true, description: "Required on POST; optional on PATCH (omit to keep)" }
+        capability: { type: string, enum: [chat, embed] }
+        is_primary: { type: boolean }
+
+    Member:
+      type: object
+      properties:
+        user_id:    { type: string, format: uuid }
+        email:      { type: string, format: email }
+        full_name:  { type: string }
+        first_name: { type: string }
+        last_name:  { type: string }
+        roles:      { type: array, items: { type: string } }
+        status:     { type: string, enum: [active, locked, deleted] }
+        invited_at: { type: string, format: date-time }
+        joined_at:  { type: string, format: date-time, nullable: true }
+
+    Invite:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        email:       { type: string, format: email }
+        roles:       { type: array, items: { type: string } }
+        status:      { type: string, enum: [pending, accepted, revoked, expired] }
+        invited_by:  { type: string }
+        expires_at:  { type: string, format: date-time }
+        created_at:  { type: string, format: date-time }
+        accepted_at: { type: string, format: date-time, nullable: true }
+        revoked_at:  { type: string, format: date-time, nullable: true }
+
+    Asset:
+      type: object
+      properties:
+        id:             { type: string, format: uuid }
+        tenant_id:      { type: string, format: uuid }
+        qualified_name: { type: string }
+        type:           { type: string }
+        name:           { type: string }
+        description:    { type: string }
+        description_ai: { type: string }
+        trust:          { type: string, enum: [unverified, draft, reviewed, certified, deprecated] }
+        tags:           { type: array, items: { type: string } }
+        owners:         { type: array, items: { type: string } }
+        properties:     { type: object, additionalProperties: true }
+        created_at:     { type: string, format: date-time }
+        updated_at:     { type: string, format: date-time }
+
+    ColumnLineageEdge:
+      type: object
+      properties:
+        id:                       { type: string, format: uuid }
+        source_asset_id:          { type: string, format: uuid }
+        source_qualified_name:    { type: string }
+        source_column:            { type: string }
+        target_asset_id:          { type: string, format: uuid }
+        target_qualified_name:    { type: string }
+        target_column:            { type: string }
+        transform:                { type: string, enum: [identity, expression, wildcard] }
+        expression:               { type: string }
+
+    SemanticHit:
+      type: object
+      properties:
+        asset_id:       { type: string, format: uuid }
+        qualified_name: { type: string }
+        type:           { type: string }
+        description:    { type: string }
+        tags:           { type: array, items: { type: string } }
+        score:          { type: number, format: float }
+
+    Pipeline:
+      type: object
+      required: [Name, Tasks]
+      properties:
+        ID:          { type: string, format: uuid, readOnly: true }
+        Name:        { type: string }
+        Description: { type: string }
+        FailFast:    { type: boolean }
+        Concurrency: { type: integer }
+        Schedule:
+          type: object
+          nullable: true
+          properties:
+            Cron:     { type: string }
+            Timezone: { type: string }
+            Enabled:  { type: boolean }
+        Tasks:
+          type: array
+          items: { $ref: "#/components/schemas/Task" }
+
+    Task:
+      type: object
+      required: [ID, Type]
+      properties:
+        ID:        { type: string }
+        Type:      { type: string, enum: [sql, transform_run, connector_sync, webhook, quality_check] }
+        Config:    { type: object, additionalProperties: true }
+        DependsOn: { type: array, items: { type: string } }
+        Outputs:   { type: array, items: { type: string } }
+
+    Run:
+      type: object
+      properties:
+        ID:           { type: string, format: uuid }
+        TenantID:     { type: string, format: uuid }
+        PipelineID:   { type: string, format: uuid }
+        Status:       { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+        StartedAt:    { type: string, format: date-time }
+        FinishedAt:   { type: string, format: date-time }
+        ScheduledAt:  { type: string, format: date-time }
+        TriggeredBy:  { type: string }
+        IdempotencyKey: { type: string }
+
+    Check:
+      type: object
+      required: [Name, Type, AssetID]
+      properties:
+        ID:         { type: string, format: uuid, readOnly: true }
+        Name:       { type: string }
+        AssetID:    { type: string, format: uuid }
+        AssetQN:    { type: string }
+        Type:       { type: string, enum: [row_count, not_null, freshness, uniqueness, custom_sql] }
+        Severity:   { type: string, enum: [info, warning, error, critical] }
+        Config:     { type: object, additionalProperties: true }
+        Enabled:    { type: boolean, default: true }
+
+    GlossaryTerm:
+      type: object
+      required: [name]
+      properties:
+        id:          { type: string, format: uuid, readOnly: true }
+        name:        { type: string }
+        definition:  { type: string }
+        parent_id:   { type: string, format: uuid }
+        status:      { type: string, enum: [draft, approved, deprecated] }
+        owner_id:    { type: string, format: uuid }
+        created_at:  { type: string, format: date-time, readOnly: true }
+        updated_at:  { type: string, format: date-time, readOnly: true }

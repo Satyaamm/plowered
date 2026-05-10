@@ -14,6 +14,12 @@ FROM node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY web/ .
+# Next.js bakes the rewrite destination from next.config.mjs at build
+# time. Pass the upstream API base in via build-arg so the resulting
+# image points at the right hostname for its environment (compose
+# defaults to http://plowered:8080).
+ARG PLOWERED_API_BASE=http://plowered:8080
+ENV PLOWERED_API_BASE=${PLOWERED_API_BASE}
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

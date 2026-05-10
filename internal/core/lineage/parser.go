@@ -110,14 +110,14 @@ func parseInsert(tokens []string) *Statement {
 	if len(tokens) < 3 || strings.ToLower(tokens[1]) != "into" {
 		return nil
 	}
-	target, after := readQualifiedName(tokens[2:])
+	target, advance := readQualifiedName(tokens[2:])
 	if target == "" {
 		return nil
 	}
 	return &Statement{
 		Op:      OpInsert,
 		Target:  target,
-		Sources: collectSourceTables(after),
+		Sources: collectSourceTables(tokens[2+advance:]),
 	}
 }
 
@@ -146,26 +146,27 @@ func parseCreate(tokens []string) *Statement {
 	if idx >= len(tokens) {
 		return nil
 	}
-	target, after := readQualifiedName(tokens[idx:])
+	target, advance := readQualifiedName(tokens[idx:])
 	if target == "" {
 		return nil
 	}
+	tail := tokens[idx+advance:]
 	switch kind {
 	case "table":
 		// must be CREATE TABLE ... AS SELECT to count as transformation
-		if !containsKeyword(after, "as") {
+		if !containsKeyword(tail, "as") {
 			return nil
 		}
 		return &Statement{
 			Op:      OpCreateTableAs,
 			Target:  target,
-			Sources: collectSourceTables(after),
+			Sources: collectSourceTables(tail),
 		}
 	case "view":
 		return &Statement{
 			Op:      OpCreateView,
 			Target:  target,
-			Sources: collectSourceTables(after),
+			Sources: collectSourceTables(tail),
 		}
 	}
 	return nil
@@ -175,14 +176,14 @@ func parseUpdate(tokens []string) *Statement {
 	if len(tokens) < 2 {
 		return nil
 	}
-	target, after := readQualifiedName(tokens[1:])
+	target, advance := readQualifiedName(tokens[1:])
 	if target == "" {
 		return nil
 	}
 	return &Statement{
 		Op:      OpUpdate,
 		Target:  target,
-		Sources: collectSourceTables(after),
+		Sources: collectSourceTables(tokens[1+advance:]),
 	}
 }
 
@@ -190,14 +191,14 @@ func parseMerge(tokens []string) *Statement {
 	if len(tokens) < 3 || strings.ToLower(tokens[1]) != "into" {
 		return nil
 	}
-	target, after := readQualifiedName(tokens[2:])
+	target, advance := readQualifiedName(tokens[2:])
 	if target == "" {
 		return nil
 	}
 	return &Statement{
 		Op:      OpMerge,
 		Target:  target,
-		Sources: collectSourceTables(after),
+		Sources: collectSourceTables(tokens[2+advance:]),
 	}
 }
 

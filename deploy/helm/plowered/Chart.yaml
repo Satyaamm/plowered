@@ -2,8 +2,8 @@ apiVersion: v2
 name: plowered
 description: The open context layer for AI agents.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
 icon: https://raw.githubusercontent.com/Satyaamm/plowered/main/web/public/icon.png
 home: https://github.com/Satyaamm/plowered
 sources:
@@ -16,3 +16,17 @@ keywords:
   - mcp
   - ai-context
   - lineage
+  - orchestration
+
+# Optional sub-charts. Disabled by default — production deploys point at
+# managed services (RDS, MemoryDB, etc.). Enable with:
+#   --set postgresql.enabled=true --set redis.enabled=true
+dependencies:
+  - name: postgresql
+    version: "16.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: "20.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled

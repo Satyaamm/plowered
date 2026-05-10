@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS policy_rules;
+DROP TABLE IF EXISTS notify_deliveries;
+DROP TABLE IF EXISTS notify_rules;
+DROP TABLE IF EXISTS notify_channels;
+DROP TABLE IF EXISTS quality_check_runs;
+DROP TABLE IF EXISTS quality_checks;
+DROP TABLE IF EXISTS task_runs;
+DROP TABLE IF EXISTS pipeline_runs;
+DROP TABLE IF EXISTS pipelines;

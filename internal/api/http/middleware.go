@@ -113,6 +113,16 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Flush forwards to the underlying writer's Flusher if it has one. The
+// SSE log endpoint relies on this — without it the cast `w.(http.Flusher)`
+// inside the handler would fail because the recorder shadows the
+// interface assertion.
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // AuthMW verifies the Authorization bearer token using the supplied verifier
 // and places the resulting Principal on the request context. Skipped paths
 // (/healthz, /readyz, /v1/auth/*) bypass auth entirely.
