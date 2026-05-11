@@ -15,27 +15,28 @@ walk them through this script.
 
 | Capability                              | Where it lives                  | Demo state |
 |-----------------------------------------|---------------------------------|------------|
-| Workspace signup + email verification   | `/signup`, Resend, `users` + `tenants` + `email_verifications` | ✅ |
-| Cookie-based session auth               | `plowered_session` HttpOnly cookie, `sessions` table | ✅ |
-| Connection CRUD + secrets vault         | `/v1/connections`, AES-256-GCM, `secrets` table | ✅ |
-| Test a connection                       | pgx handshake with 5s timeout, persists health | ✅ |
-| Schema crawler (Postgres)               | Async via Asynq, walks `information_schema` | ✅ |
-| Auto-PII tagging                        | 17 column-name rules, 6 tag classes | ✅ |
-| Catalog browse                          | Fluent DataGrid with sort + filter + type tabs | ✅ |
-| Asset detail with tabs                  | Overview · Schema · Lineage · Quality · Activity | ✅ |
-| Tamper-evident audit chain              | SHA-256 prev_hash / row_hash on every authenticated request | ✅ |
-| Recycle bin                             | Tombstones with restore + super_admin purge | ✅ |
-| Legal holds                             | 409 at delete time with hold_id surfaced | ✅ |
-| GDPR DSRs                               | 30-day SLA clock stamped at receipt | ✅ |
-| Outbox-pattern event relay              | Polls Postgres, publishes to NATS / log | ✅ (no producers wired) |
+| Workspace signup + email verification   | `/signup`, Resend, `users` + `tenants` + `email_verifications` | Live |
+| Cookie-based session auth               | `plowered_session` HttpOnly cookie, `sessions` table | Live |
+| Connection CRUD + secrets vault         | `/v1/connections`, AES-256-GCM, `secrets` table | Live |
+| Test a connection                       | pgx handshake with 5s timeout, persists health | Live |
+| Schema crawler (Postgres)               | Async via Asynq, walks `information_schema` | Live |
+| Auto-PII tagging                        | 17 column-name rules, 6 tag classes | Live |
+| Catalog browse                          | Fluent DataGrid with sort + filter + type tabs | Live |
+| Asset detail with tabs                  | Overview · Schema · Lineage · Quality · Activity | Live |
+| Tamper-evident audit chain              | SHA-256 prev_hash / row_hash on every authenticated request | Live |
+| Recycle bin                             | Tombstones with restore + super_admin purge | Live |
+| Legal holds                             | 409 at delete time with hold_id surfaced | Live |
+| GDPR DSRs                               | 30-day SLA clock stamped at receipt | Live |
+| Outbox-pattern event relay              | Polls Postgres, publishes to NATS / log | Live, no producers wired |
 
 ## The 5-minute demo
 
 1. Open <http://localhost:3000/signup>. Type workspace + email + password.
    Show the verification email arriving (or pull the token from the DB
    if you're on a test Resend key).
-2. Sign in. Land on the home page — getting-started checklist shows
-   "Workspace ✓ Email verified ✓ Connect a datasource ⃝ Crawl ⃝".
+2. Sign in. Land on the home page — the getting-started checklist shows
+   "Workspace" and "Email verified" as done, with "Connect a datasource"
+   and "Crawl" still pending.
 3. Connections → New connection. Wire up the bundled Postgres
    (`postgres` host, `plowered` db, password `plowered`).
 4. Test connection → health goes green.

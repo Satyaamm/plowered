@@ -241,11 +241,11 @@ export default function RunDetailPage() {
 function streamLabel(status: ReturnType<typeof useRunLogs>["status"]): string {
   switch (status) {
     case "open":
-      return "● streaming";
+      return "streaming";
     case "done":
-      return "✓ run complete";
+      return "run complete";
     case "error":
-      return "✕ stream closed";
+      return "stream closed";
     default:
       return "";
   }
