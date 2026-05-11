@@ -500,22 +500,36 @@ func redactDSN(dsn string) string {
 	return dsn
 }
 
-// buildVault initialises the AES-GCM secrets vault. Master key comes from
-// PLOWERED_SECRETS_MASTER_KEY (base64-encoded 32 bytes). When unset and
-// running in dev, we generate one at startup and warn — restarts will
-// orphan stored ciphertext, which is acceptable for local development
-// but never for production.
+// buildVault initialises the AES-GCM secrets vault. Master key
+// resolution order (standard Docker convention):
+//
+//  1. PLOWERED_SECRETS_MASTER_KEY env var — takes precedence
+//  2. PLOWERED_SECRETS_MASTER_KEY_FILE — read the file's contents
+//  3. (dev only) generate ephemeral key and warn
+//
+// In production mode (PLOWERED_ENV=production) we fail closed if 1 and 2
+// are both empty — sealed secrets that can't be re-opened across a
+// restart are worse than no boot at all.
 func buildVault(logger *slog.Logger, pool *pgxpool.Pool) (secrets.Vault, error) {
 	key := os.Getenv("PLOWERED_SECRETS_MASTER_KEY")
 	if key == "" {
+		if path := os.Getenv("PLOWERED_SECRETS_MASTER_KEY_FILE"); path != "" {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("vault: read master key from %q: %w", path, err)
+			}
+			key = strings.TrimSpace(string(data))
+		}
+	}
+	if key == "" {
 		if os.Getenv("PLOWERED_ENV") == "production" {
-			return nil, fmt.Errorf("PLOWERED_SECRETS_MASTER_KEY is required in production")
+			return nil, fmt.Errorf("PLOWERED_SECRETS_MASTER_KEY (or _FILE) is required in production")
 		}
 		k, err := secrets.GenerateMasterKey()
 		if err != nil {
 			return nil, fmt.Errorf("vault: generate dev key: %w", err)
 		}
-		logger.Warn("secrets: PLOWERED_SECRETS_MASTER_KEY unset — generated an ephemeral dev key. Set the env var to a stable value to make stored secrets survive restarts.")
+		logger.Warn("secrets: PLOWERED_SECRETS_MASTER_KEY (or _FILE) unset — generated an ephemeral dev key. Set the env var or mount a key file to make stored secrets survive restarts.")
 		key = k
 	}
 	storage := postgres.NewSecretsStore(pool)

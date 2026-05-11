@@ -208,19 +208,32 @@ func newConnFactory(conns connection.Repo, vault secrets.Vault) taskdeps.ConnFac
 	}
 }
 
-// buildVault mirrors the API process: master key from env, fail-closed in
-// production, ephemeral in dev (with a warning so operators notice).
+// buildVault mirrors the API process. Master key resolution:
+//  1. PLOWERED_SECRETS_MASTER_KEY env var
+//  2. PLOWERED_SECRETS_MASTER_KEY_FILE — read from a mounted file
+//  3. (dev only) generate ephemeral key + warn
+//
+// Production fails closed when 1 + 2 are both empty.
 func buildVault(logger *slog.Logger, pool *pgxpool.Pool) (secrets.Vault, error) {
 	key := os.Getenv("PLOWERED_SECRETS_MASTER_KEY")
 	if key == "" {
+		if path := os.Getenv("PLOWERED_SECRETS_MASTER_KEY_FILE"); path != "" {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("read master key file %q: %w", path, err)
+			}
+			key = strings.TrimSpace(string(data))
+		}
+	}
+	if key == "" {
 		if os.Getenv("PLOWERED_ENV") == "production" {
-			return nil, fmt.Errorf("PLOWERED_SECRETS_MASTER_KEY is required in production")
+			return nil, fmt.Errorf("PLOWERED_SECRETS_MASTER_KEY (or _FILE) is required in production")
 		}
 		k, err := secrets.GenerateMasterKey()
 		if err != nil {
 			return nil, err
 		}
-		logger.Warn("secrets: PLOWERED_SECRETS_MASTER_KEY unset — generated ephemeral dev key. Restarts will leave existing secrets unreadable.")
+		logger.Warn("secrets: PLOWERED_SECRETS_MASTER_KEY (or _FILE) unset — generated ephemeral dev key. Restarts will leave existing secrets unreadable.")
 		key = k
 	}
 	return secrets.NewAESVault(key, postgres.NewSecretsStore(pool))

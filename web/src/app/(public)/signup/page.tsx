@@ -6,17 +6,16 @@ import { useMemo, useState } from "react";
 import {
   Button,
   Checkbox,
-  Dropdown,
   Field,
   Input,
   Label,
   MessageBar,
   MessageBarBody,
-  Option,
   Spinner,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { Call20Regular } from "@fluentui/react-icons";
 import { AuthShell } from "@/components/auth-shell";
 import { useSignup } from "@/lib/auth-client";
 
@@ -51,21 +50,70 @@ const useStyles = makeStyles({
     gridTemplateColumns: "1fr 1fr",
     gap: "12px",
   },
-  // Phone block: a single labeled group whose interior is a 2-column
-  // grid (country code | number). One shared hint sits under both so
-  // the row never looks lopsided when one Field has a hint and the
-  // other doesn't.
+  // Phone block: a single bordered control with three internal slots
+  // (icon | dial-code select | number input) separated by vertical
+  // dividers. The native <select> renders the OS up/down chevron
+  // without us having to ship our own icon — matches the Bootstrap
+  // input-group convention users are familiar with.
   phoneBlock: { display: "flex", flexDirection: "column", gap: "6px" },
-  phoneLabels: {
-    display: "grid",
-    gridTemplateColumns: "150px 1fr",
-    gap: "12px",
-  },
-  phoneInputs: {
-    display: "grid",
-    gridTemplateColumns: "150px 1fr",
-    gap: "12px",
+  phoneGroup: {
+    display: "flex",
     alignItems: "stretch",
+    height: "32px",
+    boxShadow: `inset 0 0 0 1px ${tokens.colorNeutralStroke1}`,
+    borderRadius: "4px",
+    backgroundColor: tokens.colorNeutralBackground1,
+    overflow: "hidden",
+    transition: "box-shadow 120ms ease",
+    ":focus-within": {
+      boxShadow: `inset 0 0 0 2px ${tokens.colorBrandStroke1}`,
+    },
+  },
+  phoneGroupError: {
+    boxShadow: `inset 0 0 0 1px ${tokens.colorPaletteRedBorder2}`,
+    ":focus-within": {
+      boxShadow: `inset 0 0 0 2px ${tokens.colorPaletteRedBorder2}`,
+    },
+  },
+  phoneIcon: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "36px",
+    color: tokens.colorNeutralForeground3,
+    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
+    flexShrink: 0,
+  },
+  phoneSelect: {
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    padding: "0 10px",
+    paddingRight: "26px",
+    fontSize: "14px",
+    color: tokens.colorNeutralForeground1,
+    appearance: "none",
+    cursor: "pointer",
+    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
+    minWidth: "92px",
+    // The native browser dropdown indicator is hidden by appearance:none,
+    // so paint our own up/down caret as a background SVG.
+    backgroundImage:
+      "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='%237B6B58'><path d='M5 0L0 5h10L5 0z'/><path d='M5 14l5-5H0l5 5z'/></svg>\")",
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "right 8px center",
+    backgroundSize: "8px 12px",
+    flexShrink: 0,
+  },
+  phoneNumberInput: {
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    padding: "0 12px",
+    fontSize: "14px",
+    color: tokens.colorNeutralForeground1,
+    flex: 1,
+    minWidth: 0,
   },
   phoneHint: {
     fontSize: "12px",
@@ -243,13 +291,6 @@ export default function SignupPage() {
   const showErr = (k: keyof FieldErrors): string | undefined =>
     touched[k] ? errors[k] : undefined;
 
-  // Render the selected country as a compact "🇮🇳 +91" — never the full
-  // country name. The full name lives inside the dropdown list only.
-  const selectedCountry = COUNTRY_CODES.find((c) => c.code === phoneCountry);
-  const dialButtonText = selectedCountry
-    ? `${selectedCountry.flag} ${selectedCountry.code}`
-    : phoneCountry;
-
   return (
     <AuthShell
       title="Create your workspace"
@@ -322,63 +363,43 @@ export default function SignupPage() {
         </Field>
 
         <div className={styles.phoneBlock}>
-          <div className={styles.phoneLabels}>
-            <Label htmlFor="phone-country" weight="semibold">
-              Country code
-            </Label>
-            <Label htmlFor="phone-number" weight="semibold">
-              Phone (optional)
-            </Label>
-          </div>
-          <div className={styles.phoneInputs}>
-            <Dropdown
+          <Label htmlFor="phone-number" weight="semibold">
+            Phone (optional)
+          </Label>
+          <div
+            className={`${styles.phoneGroup} ${
+              showErr("phone") ? styles.phoneGroupError : ""
+            }`}
+          >
+            <span className={styles.phoneIcon} aria-hidden="true">
+              <Call20Regular />
+            </span>
+            <select
               id="phone-country"
-              value={dialButtonText}
-              selectedOptions={[phoneCountry]}
-              onOptionSelect={(_, d) => setPhoneCountry(d.optionValue ?? "+1")}
+              aria-label="Country code"
+              className={styles.phoneSelect}
+              value={phoneCountry}
+              onChange={(e) => setPhoneCountry(e.target.value)}
               disabled={signup.isPending}
-              listbox={{ style: { maxHeight: 320 } }}
             >
               {COUNTRY_CODES.map((c) => (
-                <Option
-                  key={c.code}
-                  value={c.code}
-                  // text is what Fluent renders in the trigger when this
-                  // option is selected — keep it to flag + code so the
-                  // collapsed dropdown stays compact. The country name
-                  // lives only inside the listbox item's children below.
-                  text={`${c.flag} ${c.code}`}
-                >
-                  <span
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "auto auto 1fr",
-                      columnGap: 10,
-                      alignItems: "center",
-                      width: "100%",
-                    }}
-                  >
-                    <span>{c.flag}</span>
-                    <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 38 }}>
-                      {c.code}
-                    </span>
-                    <span style={{ color: tokens.colorNeutralForeground3 }}>
-                      {c.label}
-                    </span>
-                  </span>
-                </Option>
+                <option key={c.code} value={c.code}>
+                  {`${c.flag} ${c.code}  ${c.label}`}
+                </option>
               ))}
-            </Dropdown>
-            <Input
+            </select>
+            <input
               id="phone-number"
               type="tel"
               inputMode="numeric"
               autoComplete="tel-national"
+              placeholder="Phone number"
+              className={styles.phoneNumberInput}
               value={phone}
-              onChange={(_, d) => {
+              onChange={(e) => {
                 // Strip everything but digits, spaces and dashes so the
                 // field can never carry a duplicated dial code or letters.
-                setPhone(d.value.replace(/[^\d\s-]/g, ""));
+                setPhone(e.target.value.replace(/[^\d\s-]/g, ""));
               }}
               onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
               maxLength={20}
