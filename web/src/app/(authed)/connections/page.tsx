@@ -33,6 +33,7 @@ import {
 } from "@fluentui/react-icons";
 import { PageHeader } from "@/components/page-header";
 import { ConnectionWizard } from "@/components/connection-wizard";
+import { Paginator } from "@/components/paginator";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import {
   Connection,
@@ -90,6 +91,15 @@ export default function ConnectionsPage() {
     classify.data && "job_id" in classify.data ? classify.data.job_id : null;
   const classifyJob = useJob(classifyJobId);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+
+  const total = list.data?.length ?? 0;
+  const pageRows = useMemo(() => {
+    if (!list.data) return [];
+    const start = page * pageSize;
+    return list.data.slice(start, start + pageSize);
+  }, [list.data, page, pageSize]);
 
   const columns = useMemo<TableColumnDefinition<Connection>[]>(
     () => [
@@ -242,8 +252,8 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "#FBF1EB",
-              color: "#552B0E",
+              background: tokens.colorBrandBackground2,
+              color: tokens.colorBrandForeground2,
               fontSize: 13,
             }}
           >
@@ -255,8 +265,8 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "#FBF1EB",
-              color: "#552B0E",
+              background: tokens.colorBrandBackground2,
+              color: tokens.colorBrandForeground2,
               fontSize: 13,
             }}
           >
@@ -270,8 +280,8 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "#FBF1EB",
-              color: "#552B0E",
+              background: tokens.colorBrandBackground2,
+              color: tokens.colorBrandForeground2,
               fontSize: 13,
             }}
           >
@@ -284,8 +294,8 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "#FBF1EB",
-              color: "#552B0E",
+              background: tokens.colorBrandBackground2,
+              color: tokens.colorBrandForeground2,
               fontSize: 13,
             }}
           >
@@ -312,7 +322,7 @@ export default function ConnectionsPage() {
           </div>
         )}
         {classify.isPending && (
-          <div style={{ padding: "10px 12px", fontSize: 13, color: "#552B0E" }}>
+          <div style={{ padding: "10px 12px", fontSize: 13, color: tokens.colorBrandForeground2 }}>
             Queueing classification…
           </div>
         )}
@@ -326,7 +336,7 @@ export default function ConnectionsPage() {
         {list.data && list.data.length > 0 && (
           <div className={styles.grid}>
             <DataGrid
-              items={list.data}
+              items={pageRows}
               columns={columns}
               sortable
               getRowId={(item) => item.id}
@@ -349,6 +359,13 @@ export default function ConnectionsPage() {
                 )}
               </DataGridBody>
             </DataGrid>
+            <Paginator
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </div>

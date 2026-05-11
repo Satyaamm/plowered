@@ -31,6 +31,10 @@ func connectionHandlers(mux *http.ServeMux, d ConnectionDeps) {
 	mux.HandleFunc("DELETE /v1/connections/{id}",             deleteConnectionHandler(d))
 	mux.HandleFunc("POST /v1/connections/{id}/test",          testConnectionHandler(d))
 	mux.HandleFunc("POST /v1/connections/{id}/crawl",         crawlConnectionHandler(d))
+	// :test (action verb, no id) tests an in-flight form submission
+	// without persisting anything. The wizard gates "Create" on a
+	// successful response so we never store credentials we can't reach.
+	mux.HandleFunc("POST /v1/connections:test",               testDraftConnectionHandler(d))
 }
 
 // crawlConnectionHandler enqueues an async TaskCrawlConnection job and
@@ -261,6 +265,48 @@ func deleteConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 			_ = d.Vault.Delete(r.Context(), tenant, c.SecretURN)
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// testDraftConnectionHandler validates a credential bundle that hasn't
+// been saved yet. Same shape as the create body; same per-type tester
+// drives the handshake. The DB is never touched.
+func testDraftConnectionHandler(d ConnectionDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenant := mustTenant(w, r)
+		if tenant == "" {
+			return
+		}
+		var body createConnectionRequest
+		if err := decodeJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
+			return
+		}
+		if body.Type == "" {
+			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", "type is required"})
+			return
+		}
+		tester, ok := d.Registry.Tester(connection.Type(body.Type))
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, errorBody{"unsupported_type",
+				"no tester registered for type " + body.Type})
+			return
+		}
+		now := time.Now().UTC()
+		if err := tester.Test(r.Context(), body.Config, []byte(body.Password)); err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":         false,
+				"health":     connection.HealthUnreachable,
+				"checked_at": now.Format(time.RFC3339Nano),
+				"error":      err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":         true,
+			"health":     connection.HealthHealthy,
+			"checked_at": now.Format(time.RFC3339Nano),
+		})
 	}
 }
 

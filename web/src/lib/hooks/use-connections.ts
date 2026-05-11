@@ -67,6 +67,16 @@ export function useTestConnection() {
   });
 }
 
+// useTestDraftConnection runs the handshake against an unsaved form
+// payload (same shape as create). Used by the wizard so the user
+// validates credentials before we ever persist them.
+export function useTestDraftConnection() {
+  return useMutation({
+    mutationFn: (body: CreateConnectionInput) =>
+      call<TestConnectionResult>("POST", "/v1/connections:test", body),
+  });
+}
+
 export interface CrawlAck {
   status: string;
   connection_id: string;

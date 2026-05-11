@@ -155,7 +155,7 @@ const useStyles = makeStyles({
     ":hover": { backgroundColor: "#F3F2F1" },
   },
   linkActive: {
-    backgroundColor: "#EFF6FC",
+    backgroundColor: tokens.colorBrandBackground2,
     color: tokens.colorBrandForeground1,
     borderLeft: `3px solid ${tokens.colorBrandBackground}`,
     paddingLeft: "13px",

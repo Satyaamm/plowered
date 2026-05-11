@@ -9,37 +9,37 @@ import {
   type Theme,
 } from "@fluentui/react-components";
 
-// 16-step brand ramp anchored on Azure blue (#0078D4 at 80) — the
-// signature colour Microsoft uses across the Azure portal, Azure docs,
-// and the Fluent design system. Light → dark.
+// 16-step brand ramp anchored on Cloudflare orange (#F38020 at 80).
+// Same shade Cloudflare uses across cloudflare.com, the dashboard, and
+// their developer docs. Light → dark.
 export const ploweredBrand: BrandVariants = {
-  10:  "#EFF6FC",
-  20:  "#DEEDF8",
-  30:  "#C7E0F4",
-  40:  "#A6D1F0",
-  50:  "#7EBCE7",
-  60:  "#4FA3DC",
-  70:  "#2589CA",
-  80:  "#0078D4",
-  90:  "#106EBE",
-  100: "#005A9E",
-  110: "#004C87",
-  120: "#003E6F",
-  130: "#003159",
-  140: "#002647",
-  150: "#001D38",
-  160: "#00152B",
+  10:  "#FEF4E8",
+  20:  "#FDE6CC",
+  30:  "#FCD5A8",
+  40:  "#FBC388",
+  50:  "#F9AE65",
+  60:  "#F69842",
+  70:  "#F38C2A",
+  80:  "#F38020",
+  90:  "#D86E18",
+  100: "#BC5E10",
+  110: "#9F4F0A",
+  120: "#824006",
+  130: "#663104",
+  140: "#4D2502",
+  150: "#371A01",
+  160: "#221001",
 };
 
 export const ploweredLight: Theme = {
   ...createLightTheme(ploweredBrand),
-  // Azure-style neutral surface palette: pure white content, warm-grey
-  // chrome for sidebars and panels, light grey separators.
+  // Cloudflare-style neutral palette: pure white content area, warm
+  // light-grey chrome for sidebars and panels, light grey separators.
   colorNeutralBackground1: "#FFFFFF",
-  colorNeutralBackground2: "#F8F9FA",
-  colorNeutralBackground3: "#F3F2F1",
-  colorNeutralStroke1:     "#E1DFDD",
-  colorNeutralStroke2:     "#EDEBE9",
+  colorNeutralBackground2: "#FAFAFA",
+  colorNeutralBackground3: "#F5F5F5",
+  colorNeutralStroke1:     "#E5E7EB",
+  colorNeutralStroke2:     "#EDEDED",
 };
 
 export const ploweredDark: Theme = {

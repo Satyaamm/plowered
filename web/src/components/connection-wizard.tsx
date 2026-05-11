@@ -21,10 +21,13 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  CheckmarkCircle20Filled,
   Database24Filled,
   Dismiss24Regular,
+  ErrorCircle20Filled,
+  Play20Regular,
 } from "@fluentui/react-icons";
-import { useCreateConnection } from "@/lib/hooks";
+import { useCreateConnection, useTestDraftConnection } from "@/lib/hooks";
 
 const TYPES = [
   { value: "postgres",   label: "PostgreSQL" },
@@ -75,7 +78,28 @@ const useStyles = makeStyles({
   },
   pickActive: {
     boxShadow: `0 0 0 2px ${tokens.colorBrandStroke1}`,
-    backgroundColor: "#FBF1EB",
+    backgroundColor: tokens.colorBrandBackground2,
+  },
+  testRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground3,
+  },
+  testPass: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    color: tokens.colorPaletteGreenForeground1,
+    fontWeight: 600,
+  },
+  testFail: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    color: tokens.colorPaletteRedForeground1,
+    fontWeight: 600,
   },
 });
 
@@ -88,6 +112,12 @@ export function ConnectionWizard({
 }) {
   const styles = useStyles();
   const create = useCreateConnection();
+  const testDraft = useTestDraftConnection();
+  // Test state is a small machine: idle → testing → passed | failed.
+  // Any form-field edit knocks us back to "idle" so a stale green
+  // never gates a Create on a payload that hasn't been re-validated.
+  const [testStatus, setTestStatus] = useState<"idle" | "passed" | "failed">("idle");
+  const [testError, setTestError] = useState<string>("");
 
   const [type, setType] = useState("postgres");
   const [name, setName] = useState("");
@@ -126,12 +156,23 @@ export function ConnectionWizard({
     setBqDataset("");
     setBqLocation("US");
     setBqAuthMethod("service_account");
+    setTestStatus("idle");
+    setTestError("");
     create.reset();
+    testDraft.reset();
   };
 
-  const submit = async () => {
+  // Each form-field setter is wrapped so a successful test gets
+  // invalidated the moment the payload changes — we never let "passed"
+  // gate a Create on a payload the server hasn't seen yet.
+  const dirty = <T,>(setter: (v: T) => void) => (v: T) => {
+    setter(v);
+    if (testStatus !== "idle") setTestStatus("idle");
+  };
+
+  const buildPayload = () => {
     let config: Record<string, unknown> = {};
-    let credential = password;
+    const credential = password;
     switch (type) {
       case "postgres":
         config = {
@@ -160,13 +201,31 @@ export function ConnectionWizard({
           location: bqLocation,
           auth_method: bqAuthMethod,
         };
-        // For BigQuery, the "password" textarea holds the service-
-        // account JSON; the API stores it sealed.
-        credential = password;
         break;
     }
+    return { name, type, config, password: credential };
+  };
+
+  const runTest = async () => {
+    setTestStatus("idle");
+    setTestError("");
     try {
-      await create.mutateAsync({ name, type, config, password: credential });
+      const r = await testDraft.mutateAsync(buildPayload());
+      if (r.ok) {
+        setTestStatus("passed");
+      } else {
+        setTestStatus("failed");
+        setTestError(r.error || "Test failed");
+      }
+    } catch (e) {
+      setTestStatus("failed");
+      setTestError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const submit = async () => {
+    try {
+      await create.mutateAsync(buildPayload());
       reset();
       onClose();
     } catch {
@@ -230,9 +289,12 @@ export function ConnectionWizard({
                     type === t.value ? styles.pickActive : ""
                   }`}
                   disabled={!!t.disabled}
-                  onClick={() => setType(t.value)}
+                  onClick={() => {
+                    setType(t.value);
+                    setTestStatus("idle");
+                  }}
                 >
-                  <Database24Filled style={{ color: "#B8521B" }} />
+                  <Database24Filled style={{ color: tokens.colorBrandForeground1 }} />
                   <span style={{ fontWeight: 600, fontSize: 13 }}>{t.label}</span>
                 </button>
               ))}
@@ -244,7 +306,7 @@ export function ConnectionWizard({
             <Field label="Display name" required hint="What this datasource is called inside Plowered.">
               <Input
                 value={name}
-                onChange={(_, d) => setName(d.value)}
+                onChange={(_, d) => dirty(setName)(d.value)}
                 placeholder="Production warehouse"
               />
             </Field>
@@ -255,14 +317,14 @@ export function ConnectionWizard({
                   <Field label="Host" required>
                     <Input
                       value={host}
-                      onChange={(_, d) => setHost(d.value)}
+                      onChange={(_, d) => dirty(setHost)(d.value)}
                       placeholder="db.acme.com"
                     />
                   </Field>
                   <Field label="Port" required>
                     <Input
                       value={port}
-                      onChange={(_, d) => setPort(d.value)}
+                      onChange={(_, d) => dirty(setPort)(d.value)}
                       placeholder="5432"
                     />
                   </Field>
@@ -270,14 +332,14 @@ export function ConnectionWizard({
                 <Field label="Database" required>
                   <Input
                     value={database}
-                    onChange={(_, d) => setDatabase(d.value)}
+                    onChange={(_, d) => dirty(setDatabase)(d.value)}
                     placeholder="warehouse"
                   />
                 </Field>
                 <Field label="Username" required>
                   <Input
                     value={user}
-                    onChange={(_, d) => setUser(d.value)}
+                    onChange={(_, d) => dirty(setUser)(d.value)}
                     placeholder="plowered_reader"
                   />
                 </Field>
@@ -289,14 +351,14 @@ export function ConnectionWizard({
                   <Input
                     type="password"
                     value={password}
-                    onChange={(_, d) => setPassword(d.value)}
+                    onChange={(_, d) => dirty(setPassword)(d.value)}
                   />
                 </Field>
                 <Field label="SSL mode">
                   <Dropdown
                     value={sslmode}
                     selectedOptions={[sslmode]}
-                    onOptionSelect={(_, d) => setSslmode(d.optionValue ?? "require")}
+                    onOptionSelect={(_, d) => dirty(setSslmode)(d.optionValue ?? "require")}
                   >
                     {["require", "verify-full", "verify-ca", "prefer", "disable"].map((v) => (
                       <Option key={v} value={v}>{v}</Option>
@@ -315,14 +377,14 @@ export function ConnectionWizard({
                 >
                   <Input
                     value={sfAccount}
-                    onChange={(_, d) => setSfAccount(d.value)}
+                    onChange={(_, d) => dirty(setSfAccount)(d.value)}
                     placeholder="xy12345.us-east-1"
                   />
                 </Field>
                 <Field label="Username" required>
                   <Input
                     value={user}
-                    onChange={(_, d) => setUser(d.value)}
+                    onChange={(_, d) => dirty(setUser)(d.value)}
                     placeholder="PLOWERED_READER"
                   />
                 </Field>
@@ -334,21 +396,21 @@ export function ConnectionWizard({
                   <Input
                     type="password"
                     value={password}
-                    onChange={(_, d) => setPassword(d.value)}
+                    onChange={(_, d) => dirty(setPassword)(d.value)}
                   />
                 </Field>
                 <div className={styles.rowGrid}>
                   <Field label="Warehouse" hint="Compute warehouse for crawls + samples.">
                     <Input
                       value={sfWarehouse}
-                      onChange={(_, d) => setSfWarehouse(d.value)}
+                      onChange={(_, d) => dirty(setSfWarehouse)(d.value)}
                       placeholder="ANALYTICS_WH"
                     />
                   </Field>
                   <Field label="Role">
                     <Input
                       value={sfRole}
-                      onChange={(_, d) => setSfRole(d.value)}
+                      onChange={(_, d) => dirty(setSfRole)(d.value)}
                       placeholder="PUBLIC"
                     />
                   </Field>
@@ -357,14 +419,14 @@ export function ConnectionWizard({
                   <Field label="Database" hint="Optional; scopes the crawl.">
                     <Input
                       value={database}
-                      onChange={(_, d) => setDatabase(d.value)}
+                      onChange={(_, d) => dirty(setDatabase)(d.value)}
                       placeholder="RAW"
                     />
                   </Field>
                   <Field label="Schema" hint="Optional; further scopes the crawl.">
                     <Input
                       value={sfSchema}
-                      onChange={(_, d) => setSfSchema(d.value)}
+                      onChange={(_, d) => dirty(setSfSchema)(d.value)}
                       placeholder="PUBLIC"
                     />
                   </Field>
@@ -381,7 +443,7 @@ export function ConnectionWizard({
                 >
                   <Input
                     value={bqProjectID}
-                    onChange={(_, d) => setBqProjectID(d.value)}
+                    onChange={(_, d) => dirty(setBqProjectID)(d.value)}
                     placeholder="acme-warehouse"
                   />
                 </Field>
@@ -389,14 +451,14 @@ export function ConnectionWizard({
                   <Field label="Dataset" hint="Optional; scopes the crawl.">
                     <Input
                       value={bqDataset}
-                      onChange={(_, d) => setBqDataset(d.value)}
+                      onChange={(_, d) => dirty(setBqDataset)(d.value)}
                       placeholder="analytics"
                     />
                   </Field>
                   <Field label="Location">
                     <Input
                       value={bqLocation}
-                      onChange={(_, d) => setBqLocation(d.value)}
+                      onChange={(_, d) => dirty(setBqLocation)(d.value)}
                       placeholder="US"
                     />
                   </Field>
@@ -405,7 +467,7 @@ export function ConnectionWizard({
                   <Dropdown
                     value={bqAuthMethod === "service_account" ? "Service account JSON" : "Workload identity"}
                     selectedOptions={[bqAuthMethod]}
-                    onOptionSelect={(_, d) => setBqAuthMethod(d.optionValue ?? "service_account")}
+                    onOptionSelect={(_, d) => dirty(setBqAuthMethod)(d.optionValue ?? "service_account")}
                   >
                     <Option value="service_account">Service account JSON</Option>
                     <Option value="workload_identity">Workload identity</Option>
@@ -420,7 +482,7 @@ export function ConnectionWizard({
                     <Input
                       type="password"
                       value={password}
-                      onChange={(_, d) => setPassword(d.value)}
+                      onChange={(_, d) => dirty(setPassword)(d.value)}
                       placeholder='{ "type": "service_account", "project_id": "...", ... }'
                     />
                   </Field>
@@ -446,14 +508,45 @@ export function ConnectionWizard({
             can rotate or revoke access at any time from this drawer.
           </Caption1>
 
+          {testStatus === "passed" && (
+            <div className={styles.testRow}>
+              <span className={styles.testPass}>
+                <CheckmarkCircle20Filled /> Connection verified — ready to create
+              </span>
+            </div>
+          )}
+          {testStatus === "failed" && (
+            <MessageBar intent="error">
+              <MessageBarBody>
+                <span className={styles.testFail}>
+                  <ErrorCircle20Filled /> Test failed
+                </span>{" "}
+                {testError}
+              </MessageBarBody>
+            </MessageBar>
+          )}
+
           <div className={styles.footer}>
-            <Button appearance="secondary" onClick={onClose} disabled={create.isPending}>
+            <Button appearance="secondary" onClick={onClose} disabled={create.isPending || testDraft.isPending}>
               Cancel
+            </Button>
+            <Button
+              appearance="secondary"
+              icon={testDraft.isPending ? <Spinner size="tiny" /> : <Play20Regular />}
+              onClick={runTest}
+              disabled={!valid || testDraft.isPending || create.isPending}
+            >
+              {testDraft.isPending ? "Testing…" : "Test connection"}
             </Button>
             <Button
               appearance="primary"
               onClick={submit}
-              disabled={!valid || create.isPending}
+              disabled={!valid || testStatus !== "passed" || create.isPending}
+              title={
+                testStatus !== "passed"
+                  ? "Run Test connection first — Create is enabled once the credentials pass"
+                  : undefined
+              }
             >
               {create.isPending ? <Spinner size="tiny" /> : "Create connection"}
             </Button>

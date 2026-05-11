@@ -33,7 +33,6 @@ import {
   Circle20Regular,
   Sparkle20Regular,
 } from "@fluentui/react-icons";
-import { PageHeader } from "@/components/page-header";
 import {
   useAuditFeed,
   useConnections,
@@ -249,8 +248,6 @@ export default function Home() {
     [styles],
   );
 
-  const greeting = principal?.fullName?.split(" ")[0] ?? principal?.email?.split("@")[0] ?? "there";
-
   // Getting-started checklist. Each step has done/icon/cta.
   const steps = [
     {
@@ -281,12 +278,6 @@ export default function Home() {
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        title={`Welcome, ${greeting}`}
-        subtitle="Your data context platform — catalog, governance, and AI-native lineage."
-        crumbs={[{ label: "Home" }]}
-      />
-
       {/* Getting started */}
       {nextStep && (
         <div className={styles.gsCard}>
