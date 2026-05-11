@@ -6,16 +6,16 @@ import { useMemo, useState } from "react";
 import {
   Button,
   Checkbox,
+  Dropdown,
   Field,
   Input,
-  Label,
   MessageBar,
   MessageBarBody,
+  Option,
   Spinner,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { Call20Regular } from "@fluentui/react-icons";
 import { AuthShell } from "@/components/auth-shell";
 import { useSignup } from "@/lib/auth-client";
 
@@ -50,81 +50,9 @@ const useStyles = makeStyles({
     gridTemplateColumns: "1fr 1fr",
     gap: "12px",
   },
-  // Phone block: a single bordered control with three internal slots
-  // (icon | dial-code select | number input) separated by vertical
-  // dividers. The native <select> renders the OS up/down chevron
-  // without us having to ship our own icon — matches the Bootstrap
-  // input-group convention users are familiar with.
-  phoneBlock: { display: "flex", flexDirection: "column", gap: "6px" },
-  phoneGroup: {
-    display: "flex",
-    alignItems: "stretch",
-    height: "32px",
-    boxShadow: `inset 0 0 0 1px ${tokens.colorNeutralStroke1}`,
-    borderRadius: "4px",
-    backgroundColor: tokens.colorNeutralBackground1,
-    overflow: "hidden",
-    transition: "box-shadow 120ms ease",
-    ":focus-within": {
-      boxShadow: `inset 0 0 0 2px ${tokens.colorBrandStroke1}`,
-    },
-  },
-  phoneGroupError: {
-    boxShadow: `inset 0 0 0 1px ${tokens.colorPaletteRedBorder2}`,
-    ":focus-within": {
-      boxShadow: `inset 0 0 0 2px ${tokens.colorPaletteRedBorder2}`,
-    },
-  },
-  phoneIcon: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "36px",
-    color: tokens.colorNeutralForeground3,
-    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
-    flexShrink: 0,
-  },
-  phoneSelect: {
-    border: "none",
-    outline: "none",
-    background: "transparent",
-    padding: "0 10px",
-    paddingRight: "26px",
-    fontSize: "14px",
-    color: tokens.colorNeutralForeground1,
-    appearance: "none",
-    cursor: "pointer",
-    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
-    minWidth: "92px",
-    // The native browser dropdown indicator is hidden by appearance:none,
-    // so paint our own up/down caret as a background SVG.
-    backgroundImage:
-      "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='%237B6B58'><path d='M5 0L0 5h10L5 0z'/><path d='M5 14l5-5H0l5 5z'/></svg>\")",
-    backgroundRepeat: "no-repeat",
-    backgroundPosition: "right 8px center",
-    backgroundSize: "8px 12px",
-    flexShrink: 0,
-  },
-  phoneNumberInput: {
-    border: "none",
-    outline: "none",
-    background: "transparent",
-    padding: "0 12px",
-    fontSize: "14px",
-    color: tokens.colorNeutralForeground1,
-    flex: 1,
-    minWidth: 0,
-  },
-  phoneHint: {
-    fontSize: "12px",
-    color: tokens.colorNeutralForeground3,
-    marginTop: "2px",
-  },
-  phoneError: {
-    fontSize: "12px",
-    color: tokens.colorPaletteRedForeground1,
-    marginTop: "2px",
-  },
+  // Two stacked Fields — country code (full width) on top, phone number
+  // (full width) below. Each carries its own label, validation slot, and
+  // the shared hint sits under the phone number field.
   meta: {
     fontSize: "12px",
     color: tokens.colorNeutralForeground3,
@@ -197,7 +125,9 @@ export default function SignupPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [phoneCountry, setPhoneCountry] = useState("+1");
+  // Default to +91 (India). The user's primary market today is India;
+  // changing the default downstream is a 1-line edit.
+  const [phoneCountry, setPhoneCountry] = useState("+91");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -291,6 +221,17 @@ export default function SignupPage() {
   const showErr = (k: keyof FieldErrors): string | undefined =>
     touched[k] ? errors[k] : undefined;
 
+  // Resolve the currently-selected country so we can render the full
+  // "🇺🇸 +1  United States / Canada" string in the dropdown trigger. The
+  // ?? fallback covers the (impossible) case where someone forces a
+  // dial code we don't have a row for.
+  const selectedCountry =
+    COUNTRY_CODES.find((c) => c.code === phoneCountry) ?? {
+      code: phoneCountry,
+      flag: "🏳",
+      label: "",
+    };
+
   return (
     <AuthShell
       title="Create your workspace"
@@ -362,58 +303,61 @@ export default function SignupPage() {
           />
         </Field>
 
-        <div className={styles.phoneBlock}>
-          <Label htmlFor="phone-number" weight="semibold">
-            Phone (optional)
-          </Label>
-          <div
-            className={`${styles.phoneGroup} ${
-              showErr("phone") ? styles.phoneGroupError : ""
-            }`}
+        <Field label="Country code">
+          <Dropdown
+            value={`${selectedCountry.flag} ${selectedCountry.code}  ${selectedCountry.label}`}
+            selectedOptions={[phoneCountry]}
+            onOptionSelect={(_, d) => setPhoneCountry(d.optionValue ?? "+91")}
+            disabled={signup.isPending}
+            listbox={{ style: { maxHeight: 320 } }}
           >
-            <span className={styles.phoneIcon} aria-hidden="true">
-              <Call20Regular />
-            </span>
-            <select
-              id="phone-country"
-              aria-label="Country code"
-              className={styles.phoneSelect}
-              value={phoneCountry}
-              onChange={(e) => setPhoneCountry(e.target.value)}
-              disabled={signup.isPending}
-            >
-              {COUNTRY_CODES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {`${c.flag} ${c.code}  ${c.label}`}
-                </option>
-              ))}
-            </select>
-            <input
-              id="phone-number"
-              type="tel"
-              inputMode="numeric"
-              autoComplete="tel-national"
-              placeholder="Phone number"
-              className={styles.phoneNumberInput}
-              value={phone}
-              onChange={(e) => {
-                // Strip everything but digits, spaces and dashes so the
-                // field can never carry a duplicated dial code or letters.
-                setPhone(e.target.value.replace(/[^\d\s-]/g, ""));
-              }}
-              onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
-              maxLength={20}
-              disabled={signup.isPending}
-            />
-          </div>
-          {showErr("phone") ? (
-            <span className={styles.phoneError}>{showErr("phone")}</span>
-          ) : (
-            <span className={styles.phoneHint}>
-              Used only for security alerts and break-glass recovery.
-            </span>
-          )}
-        </div>
+            {COUNTRY_CODES.map((c) => (
+              <Option
+                key={c.code}
+                value={c.code}
+                text={`${c.flag} ${c.code}  ${c.label}`}
+              >
+                <span
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto auto 1fr",
+                    columnGap: 10,
+                    alignItems: "center",
+                    width: "100%",
+                  }}
+                >
+                  <span>{c.flag}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 42 }}>
+                    {c.code}
+                  </span>
+                  <span style={{ color: tokens.colorNeutralForeground3 }}>
+                    {c.label}
+                  </span>
+                </span>
+              </Option>
+            ))}
+          </Dropdown>
+        </Field>
+
+        <Field
+          label="Phone (optional)"
+          hint="Used only for security alerts and break-glass recovery."
+          validationState={showErr("phone") ? "error" : "none"}
+          validationMessage={showErr("phone")}
+        >
+          <Input
+            type="tel"
+            inputMode="numeric"
+            autoComplete="tel-national"
+            value={phone}
+            onChange={(_, d) => {
+              setPhone(d.value.replace(/[^\d\s-]/g, ""));
+            }}
+            onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
+            maxLength={20}
+            disabled={signup.isPending}
+          />
+        </Field>
 
         <Field
           label="Password"
