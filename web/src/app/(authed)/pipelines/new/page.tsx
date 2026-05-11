@@ -75,7 +75,17 @@ export default function NewPipelinePage() {
     return removed !== tasks.length;
   })();
 
-  const valid = name && !hasCycle;
+  // Cron is a standard 5-field expression (minute hour day month weekday).
+  // We accept *, */N, comma lists and ranges in each slot.
+  const CRON_RE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/;
+  const cronTrim = cron.trim();
+  const cronError =
+    enabled && !cronTrim
+      ? "Cron expression is required when a schedule is enabled"
+      : cronTrim && !CRON_RE.test(cronTrim)
+        ? "Expected 5 fields, e.g. '0 3 * * *'"
+        : "";
+  const valid = name && !hasCycle && !cronError;
 
   const submit = async () => {
     if (!valid) return;
@@ -85,7 +95,7 @@ export default function NewPipelinePage() {
       FailFast: failFast,
       Concurrency: 4,
       Tasks: tasks,
-      Schedule: cron ? { Cron: cron, Enabled: enabled, Timezone: "UTC" } : null,
+      Schedule: cronTrim ? { Cron: cronTrim, Enabled: enabled, Timezone: "UTC" } : null,
     });
     router.push(`/pipelines/${encodeURIComponent(created.ID)}`);
   };
@@ -125,7 +135,12 @@ export default function NewPipelinePage() {
                 autoFocus
               />
             </Field>
-            <Field label="Cron (optional)">
+            <Field
+              label={enabled ? "Cron expression" : "Cron (optional)"}
+              required={enabled}
+              validationState={cronError ? "error" : "none"}
+              validationMessage={cronError || undefined}
+            >
               <Input
                 value={cron}
                 onChange={(_, d) => setCron(d.value)}

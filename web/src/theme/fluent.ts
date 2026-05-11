@@ -9,38 +9,42 @@ import {
   type Theme,
 } from "@fluentui/react-components";
 
-// 16-step brand ramp generated around the primary terracotta (#B8521B at 80).
-// Light → dark.
+// 16-step brand ramp anchored on Azure blue (#0078D4 at 80) — the
+// signature colour Microsoft uses across the Azure portal, Azure docs,
+// and the Fluent design system. Light → dark.
 export const ploweredBrand: BrandVariants = {
-  10: "#FBF1EB",
-  20: "#F7E2D4",
-  30: "#F3D2BC",
-  40: "#EFC2A4",
-  50: "#E9AE85",
-  60: "#DF9762",
-  70: "#D27C44",
-  80: "#B8521B",
-  90: "#A14918",
-  100: "#884015",
-  110: "#6E3611",
-  120: "#552B0E",
-  130: "#3D2008",
-  140: "#2A1605",
-  150: "#1A0E03",
-  160: "#100802",
+  10:  "#EFF6FC",
+  20:  "#DEEDF8",
+  30:  "#C7E0F4",
+  40:  "#A6D1F0",
+  50:  "#7EBCE7",
+  60:  "#4FA3DC",
+  70:  "#2589CA",
+  80:  "#0078D4",
+  90:  "#106EBE",
+  100: "#005A9E",
+  110: "#004C87",
+  120: "#003E6F",
+  130: "#003159",
+  140: "#002647",
+  150: "#001D38",
+  160: "#00152B",
 };
 
 export const ploweredLight: Theme = {
   ...createLightTheme(ploweredBrand),
-  // Surface overrides: shift the canvas warm so it reads "cream", not "ash".
-  colorNeutralBackground1: "#FAF6F0",
-  colorNeutralBackground2: "#F4ECDF",
-  colorNeutralBackground3: "#EDE2D0",
+  // Azure-style neutral surface palette: pure white content, warm-grey
+  // chrome for sidebars and panels, light grey separators.
+  colorNeutralBackground1: "#FFFFFF",
+  colorNeutralBackground2: "#F8F9FA",
+  colorNeutralBackground3: "#F3F2F1",
+  colorNeutralStroke1:     "#E1DFDD",
+  colorNeutralStroke2:     "#EDEBE9",
 };
 
 export const ploweredDark: Theme = {
   ...createDarkTheme(ploweredBrand),
-  colorNeutralBackground1: "#1A1410",
-  colorNeutralBackground2: "#221A14",
-  colorNeutralBackground3: "#2B201A",
+  colorNeutralBackground1: "#1B1B1B",
+  colorNeutralBackground2: "#242424",
+  colorNeutralBackground3: "#2D2D2D",
 };

@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	cronlib "github.com/robfig/cron/v3"
 
 	"github.com/Satyaamm/plowered/internal/core/auth"
 	"github.com/Satyaamm/plowered/internal/core/deleted"
@@ -13,6 +16,32 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/pipeline"
 	"github.com/Satyaamm/plowered/internal/worker"
 )
+
+// cronParser matches the parser the scheduler uses, so what we accept
+// at the API is exactly what the scheduler will fire.
+var cronParser = cronlib.NewParser(
+	cronlib.Minute | cronlib.Hour | cronlib.Dom | cronlib.Month | cronlib.Dow | cronlib.Descriptor,
+)
+
+// validateSchedule enforces the rule the UI also enforces: when a
+// schedule is enabled, the cron expression must be present AND parse.
+// When the schedule is disabled, the cron can be empty (a scheduled-
+// but-paused pipeline is a legitimate state).
+func validateSchedule(s *pipeline.Schedule) error {
+	if s == nil {
+		return nil
+	}
+	cron := strings.TrimSpace(s.Cron)
+	if s.Enabled && cron == "" {
+		return fmt.Errorf("schedule.cron is required when schedule.enabled is true")
+	}
+	if cron != "" {
+		if _, err := cronParser.Parse(cron); err != nil {
+			return fmt.Errorf("schedule.cron is not a valid cron expression: %v", err)
+		}
+	}
+	return nil
+}
 
 // pipelineHandlers wires pipeline + run endpoints onto mux.
 func pipelineHandlers(mux *http.ServeMux, store pipeline.Repo, enq worker.Enqueuer, tomb deleted.Repo, holds legalhold.Repo) {
@@ -64,6 +93,10 @@ func createPipelineHandler(s pipeline.Repo) http.HandlerFunc {
 			p.UpdatedBy = pr.ID
 		}
 		if _, err := pipeline.TopologicalSort(p.Tasks); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorBody{"invalid_argument", err.Error()})
+			return
+		}
+		if err := validateSchedule(p.Schedule); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"invalid_argument", err.Error()})
 			return
 		}
@@ -120,6 +153,10 @@ func updatePipelineHandler(s pipeline.Repo) http.HandlerFunc {
 			patch.UpdatedBy = pr.ID
 		}
 		if _, err := pipeline.TopologicalSort(patch.Tasks); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorBody{"invalid_argument", err.Error()})
+			return
+		}
+		if err := validateSchedule(patch.Schedule); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"invalid_argument", err.Error()})
 			return
 		}

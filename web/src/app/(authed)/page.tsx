@@ -63,8 +63,8 @@ const useStyles = makeStyles({
     width: "32px",
     height: "32px",
     borderRadius: "6px",
-    backgroundColor: "#FBF1EB",
-    color: "#B8521B",
+    backgroundColor: tokens.colorBrandBackground2,
+    color: tokens.colorBrandForeground1,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -213,7 +213,7 @@ export default function Home() {
         renderCell: (item) => (
           <span
             className={styles.mono}
-            style={{ fontWeight: 600, color: "#B8521B" }}
+            style={{ fontWeight: 600, color: tokens.colorBrandForeground1 }}
           >
             {item.method}
           </span>

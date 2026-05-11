@@ -109,6 +109,9 @@ export function PipelineDAG({ tasks }: { tasks: Task[] }) {
         nodes={nodes}
         edges={edges}
         fitView
+        fitViewOptions={{ maxZoom: 1, padding: 0.3 }}
+        minZoom={0.2}
+        maxZoom={1.5}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ type: "smoothstep" }}
         nodesDraggable={false}

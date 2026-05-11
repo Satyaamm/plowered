@@ -101,7 +101,15 @@ export default function EditPipelinePage({
   if (!pipeline) return null;
 
   const cycle = hasCycle(tasks);
-  const valid = name && !cycle;
+  const CRON_RE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/;
+  const cronTrim = cron.trim();
+  const cronError =
+    enabled && !cronTrim
+      ? "Cron expression is required when a schedule is enabled"
+      : cronTrim && !CRON_RE.test(cronTrim)
+        ? "Expected 5 fields, e.g. '0 3 * * *'"
+        : "";
+  const valid = name && !cycle && !cronError;
 
   const submit = async () => {
     if (!valid) return;
@@ -110,7 +118,7 @@ export default function EditPipelinePage({
       Description: description,
       FailFast: failFast,
       Tasks: tasks,
-      Schedule: cron ? { Cron: cron, Enabled: enabled, Timezone: "UTC" } : null,
+      Schedule: cronTrim ? { Cron: cronTrim, Enabled: enabled, Timezone: "UTC" } : null,
     });
     router.push(`/pipelines/${encodeURIComponent(id)}`);
   };
@@ -146,7 +154,12 @@ export default function EditPipelinePage({
             <Field label="Name" required>
               <Input value={name} onChange={(_, d) => setName(d.value)} />
             </Field>
-            <Field label="Cron (optional)">
+            <Field
+              label={enabled ? "Cron expression" : "Cron (optional)"}
+              required={enabled}
+              validationState={cronError ? "error" : "none"}
+              validationMessage={cronError || undefined}
+            >
               <Input
                 value={cron}
                 onChange={(_, d) => setCron(d.value)}
