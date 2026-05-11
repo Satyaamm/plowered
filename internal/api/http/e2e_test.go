@@ -204,7 +204,6 @@ func TestE2E_TeamAndBYOM(t *testing.T) {
 		"first_name":       "Olivia",
 		"last_name":        "Owner",
 		"workspace_name":   "Acme Data",
-		"workspace_slug":   "acme-data",
 		"accept_terms":     true,
 	}, hpOpts{})
 	if resp.StatusCode != http.StatusAccepted {
