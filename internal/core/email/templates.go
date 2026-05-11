@@ -48,6 +48,24 @@ func InvitationTemplate(workspaceName, inviterEmail, recipientEmail, inviteURL s
 	}
 }
 
+// PasswordResetTemplate composes the "reset your password" email. The
+// resetURL points at /reset-password on the web app; the page POSTs
+// the token + new password to /v1/auth/reset-password.
+func PasswordResetTemplate(workspaceName, recipientEmail, resetURL string) Message {
+	subject := "Reset your Plowered password"
+	body := strings.ReplaceAll(htmlResetBody, "{{resetURL}}", resetURL)
+	body = strings.ReplaceAll(body, "{{workspace}}", brandName(workspaceName))
+	body = strings.ReplaceAll(body, "{{email}}", recipientEmail)
+	text := strings.ReplaceAll(textResetBody, "{{resetURL}}", resetURL)
+	return Message{
+		To:      []string{recipientEmail},
+		Subject: subject,
+		HTML:    body,
+		Text:    text,
+		Tag:     "password_reset",
+	}
+}
+
 func brandName(s string) string {
 	if s == "" {
 		return "Plowered"
@@ -105,6 +123,53 @@ const htmlInviteBody = `<!doctype html>
         <p style="font-size:11px;color:#9D8E7C;margin:16px 0 0;">© Plowered · open data context platform</p>
       </td>
     </tr>
+  </table>
+</body>
+</html>`
+
+const textResetBody = `Someone (hopefully you) asked to reset the password for {{email}}.
+
+Click the link below to choose a new password — the link expires in
+24 hours and can only be used once:
+
+{{resetURL}}
+
+If you didn't request this, ignore this email. Your existing password
+will continue to work.
+
+— The Plowered team
+`
+
+const htmlResetBody = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width" />
+<title>Reset your password</title>
+</head>
+<body style="margin:0;padding:0;background:#FAF6F0;font-family:Segoe UI,system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;color:#1F1B17;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FAF6F0;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #E8DDD0;border-radius:8px;overflow:hidden;">
+        <tr><td style="padding:28px 32px 8px;">
+          <div style="font-size:13px;color:#9D8E7C;letter-spacing:.04em;text-transform:uppercase;font-weight:600;">Plowered · password reset</div>
+        </td></tr>
+        <tr><td style="padding:8px 32px 0;">
+          <h1 style="font-size:22px;font-weight:600;margin:0 0 8px;">Reset your password</h1>
+          <p style="font-size:14px;line-height:1.6;color:#3A2F25;margin:0 0 24px;">
+            We received a request to reset the password for <strong>{{email}}</strong>. Click below to choose a new one. The link expires in 24 hours.
+          </p>
+        </td></tr>
+        <tr><td style="padding:0 32px 24px;">
+          <a href="{{resetURL}}" style="display:inline-block;background:#B8521B;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:4px;font-size:14px;">Reset password</a>
+        </td></tr>
+        <tr><td style="padding:0 32px 28px;">
+          <p style="font-size:12px;line-height:1.5;color:#9D8E7C;margin:0;">
+            If you didn't request a password reset, you can safely ignore this email. Your existing password will continue to work.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
   </table>
 </body>
 </html>`

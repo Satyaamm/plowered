@@ -19,3 +19,4 @@ export * from "./use-search";
 export * from "./use-ai-providers";
 export * from "./use-jobs";
 export * from "./use-team";
+export * from "./use-account";

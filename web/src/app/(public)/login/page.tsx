@@ -138,11 +138,16 @@ function LoginInner() {
           {login.isPending ? <Spinner size="tiny" /> : "Sign in"}
         </Button>
 
-        <div className={styles.meta}>
-          New to Plowered?{" "}
-          <Link href="/signup" className={styles.link}>
-            Create a workspace
+        <div className={styles.meta} style={{ display: "flex", justifyContent: "space-between" }}>
+          <Link href="/forgot-password" className={styles.link}>
+            Forgot password?
           </Link>
+          <span>
+            New to Plowered?{" "}
+            <Link href="/signup" className={styles.link}>
+              Create a workspace
+            </Link>
+          </span>
         </div>
       </form>
     </AuthShell>

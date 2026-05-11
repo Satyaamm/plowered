@@ -29,10 +29,30 @@ What we do NOT touch by default:
 ## 2. SOC 2 mapping
 
 ### Security (CC6)
-- Authentication via OIDC; per-tenant JWT; access tokens ≤ 15 min,
-  refresh-token rotation. (`SECURITY.md` §2)
+- Authentication via email/password (Argon2id) today; OIDC + per-tenant
+  JWT on the roadmap. Sessions are server-side rows behind HttpOnly,
+  Secure, SameSite=Lax cookies; rotated on login; revocable from
+  `/account` → Active sessions. 14-day TTL.
+- **Account lockout**: 5 consecutive failed logins inside a 15-minute
+  rolling window flips `users.status = 'locked'`. Cleared by a
+  successful password reset (`internal/api/http/auth.go` +
+  `password_reset.go`). Threshold + window follow OWASP / NIST 800-63B.
+- **Per-IP rate limiting** on auth endpoints (login, signup, forgot,
+  reset, verify): token bucket, configurable per env. Headers follow
+  IETF draft-ietf-httpapi-ratelimit-headers (RFC 9239):
+  `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`.
+- **Per-principal rate limiting** on authenticated routes: 120 reads/
+  minute + 30 writes/minute by default. Keys by `principal_id` when
+  authed, falls back to IP. Same RFC 9239 headers.
+- **Security headers** (set by `SecurityHeadersMW`): HSTS
+  (`max-age=31536000; includeSubDomains`), `X-Content-Type-Options:
+  nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, `Permissions-Policy` lockdown,
+  COOP + CORP, strict CSP (relaxed only on `/docs` for Swagger UI).
 - Network: TLS 1.3 at the edge; mTLS service-to-service. (§9)
-- Encryption at rest for connector credentials via vault interface (§5).
+- Encryption at rest for connector credentials via AES-256-GCM sealed
+  vault. Sealed keys never appear in logs, metrics, or audit `before/
+  after` JSON.
 - Vulnerability scanning on every PR; pinned base images by digest;
   signed releases (§10).
 
@@ -66,14 +86,37 @@ What we do NOT touch by default:
 ## 3. GDPR mapping
 
 ### Data Subject Rights
-- **Right to access (Art. 15)**: `GET /v1/dsar/access?subject_id=...`
-  returns every row across every table referencing that subject id.
-- **Right to erasure (Art. 17)**: `POST /v1/dsar/erase` writes a tombstone
-  and runs a soft-delete pass; downstream connectors with `pii_columns`
-  configured re-emit nullified rows on next sync.
-- **Right to portability (Art. 20)**: DSAR-access output is JSON.
-- **Right to rectification (Art. 16)**: standard UPDATE flow with audit
-  trail.
+
+Two surfaces serve these rights — **admin DSR** for "the regulator
+asked us to delete this customer" and **self-service /v1/account** for
+the user acting on themselves.
+
+- **Right to access (Art. 15)**:
+  - Self-service: `GET /v1/account/export` returns a JSON bundle with
+    `_meta`, `profile`, `memberships`, and active `sessions` for the
+    authenticated user. Sets `Content-Disposition: attachment` so the
+    browser saves a file the user can `jq` over.
+  - Admin: `GET /v1/dsr/...` returns every row across every table
+    referencing the subject id (covers data subjects who are not
+    Plowered users — e.g. people whose data is catalogued).
+- **Right to rectification (Art. 16)**: `PATCH /v1/account/profile`
+  for self-service updates. Standard UPDATE flow with audit trail for
+  admin-driven changes.
+- **Right to erasure (Art. 17)**:
+  - Self-service: `DELETE /v1/account?confirm=true` pseudonymises the
+    user (email → `deleted-<uuid>@deleted.invalid`, names/phone/avatar
+    blanked, `status='deleted'`, `password_hash` cleared) and revokes
+    every active session. The `users.id` is retained so audit history
+    remains investigable under Art. 17(3)(b) (compliance with a legal
+    obligation — SOC 2 + HIPAA audit retention).
+  - Admin: `POST /v1/dsr/erase` writes a tombstone and runs a
+    soft-delete pass; downstream connectors with `pii_columns`
+    configured re-emit nullified rows on next sync.
+- **Right to portability (Art. 20)**: both export surfaces emit
+  structured, machine-readable JSON.
+- **Right to object (Art. 21)**: telemetry opt-out via
+  `PLOWERED_TELEMETRY_DISABLED=true` (deploy-time). Marketing email
+  preferences live on the Account → Notifications tab.
 
 ### Data Processing
 - **Lawful basis**: contract performance for paid customers; legitimate
@@ -178,13 +221,70 @@ in metrics labels or aggregated logs.
 | Stuck-run reaper | CC7 | — | §164.308(a)(7)(ii)(C) | `internal/core/pipeline/reaper.go` |
 | Notification idempotency keys | CC8 | — | §164.312(c) | `pkg/notify` |
 | Daily audit-log export to object-lock storage | CC8 | Art. 30(4) | §164.312(b) | scheduled job |
+| Account lockout (5 fails / 15 min) | CC6 | Art. 32 | §164.308(a)(5)(ii)(C) | `internal/api/http/auth.go` |
+| Argon2id password hashing | CC6 | Art. 32 | §164.312(a)(2)(i) | `internal/core/identity/password.go` |
+| Per-IP auth rate-limit + RFC 9239 headers | CC6 | Art. 32 | §164.308(a)(5)(ii)(C) | `ratelimit_auth.go` |
+| Per-principal API rate-limit | CC6/CC7 | Art. 32 | §164.312(b) | `ratelimit_api.go` |
+| Security headers (HSTS / CSP / X-Frame-Options) | CC6 | Art. 32 | §164.312(e)(1) | `security_headers.go` |
+| Self-service data export (Art. 20) | — | Art. 15, 20 | — | `GET /v1/account/export` |
+| Self-service erasure / pseudonymisation | CC9 | Art. 17 | — | `DELETE /v1/account` |
+| Sessions list + revoke + sign-out-everywhere | CC6 | Art. 32 | §164.312(a)(2)(iii) | `account.go` |
+| SSRF guard on outbound connectors | CC6/CC9 | Art. 32 | §164.312(e) | `internal/core/secrets/ssrf.go` |
+| Session revocation on password change | CC6 | Art. 32 | §164.312(a) | `account.go` + `password_reset.go` |
 
 ## 8. What's still open
 
-- Independent SOC 2 Type II audit (operational, requires running the
-  product 6+ months with controls in place).
-- BAA legal template (operational).
-- ClassifierAgent live (designed, scheduled for the next AI slice).
-- DSAR endpoints (designed, scheduled for the orchestration slice).
-- Cron scheduler + reaper (scheduled within orchestration).
-- WebSocket real-time updates (scheduled).
+The product side is in good shape; what remains is mostly **operational
+attestation work** that can only happen once the controls have been
+running in production for the required observation window.
+
+### Code / product gaps
+
+- **MFA (TOTP)**. `users.mfa_enrolled` column exists; the enrollment +
+  challenge flow does not. Required by HIPAA §164.312(d) for any
+  workforce member accessing PHI, and is a frequent SOC 2 finding when
+  missing. *Next slice.*
+- **SSO via OIDC / SAML**. Customers in regulated industries want IdP-
+  driven login (Okta, Entra, Auth0). Plan: `coreos/go-oidc` for
+  Authorization Code + PKCE, lazy JIT provisioning into
+  `tenant_memberships`. *Next slice after MFA.*
+- **WebAuthn / passkey** as second factor or primary. Optional but
+  increasingly expected.
+- **ClassifierAgent live** (designed; PII/PHI tag proposals).
+- **Customer-managed encryption keys (BYOK / HYOK)** for the secrets
+  vault. AWS KMS / GCP KMS / Azure KeyVault adapters.
+- **Tenant-scoped data residency**. Today every tenant runs in the
+  region of the deployment; a multi-region SaaS deployment needs the
+  region pin enforced at write-time and routing handled at the LB.
+- **Privacy Policy / Terms of Service** pages in the marketing site
+  (operational + legal, not engineering).
+
+### Process / operational gaps
+
+- **Independent SOC 2 Type II audit**. Requires 6+ months of evidence
+  collection with the controls running. Prerequisite: pick an auditor
+  (Vanta / Drata / Secureframe agent for the evidence collection, then
+  a CPA firm for the attestation).
+- **BAA legal template**. Required before signing any HIPAA-covered
+  entity. Engage outside counsel; AWS / GCP / Azure each publish
+  starter templates.
+- **Sub-processor list + DPAs**. We use Resend (email), an LLM
+  provider per workspace (BYOM), an S3-compatible object store, and
+  Postgres. A maintained sub-processor list + signed DPAs are an Art.
+  28 requirement.
+- **Backup restore drill**. Document a runbook AND execute it
+  quarterly. The audit asks for evidence of the last restore, not just
+  the runbook.
+- **Vulnerability scanning in CI**. `govulncheck` + `npm audit` +
+  `trivy` on the Docker images, gating merges. Currently manual.
+- **Pen test**. Most enterprise procurement teams ask for one within
+  the last 12 months. Budget ~$15-30k for a focused web-app + API
+  engagement.
+- **Trust Center page**. A public "what controls do you have"
+  landing page (e.g. trust.plowered.com) cuts security-review cycles
+  in half. Vanta / Drata both ship one if you adopt their platform.
+- **Incident response tabletop**. Run one once a quarter; record the
+  minutes. The runbook at `docs/runbooks/data-breach.md` is the
+  starting script.
+- **Workforce security training**. Annual + at hire. Required by
+  HIPAA §164.308(a)(5). Tools: KnowBe4, Hoxhunt, Vanta-bundled.

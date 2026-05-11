@@ -107,6 +107,24 @@ export function useResendVerification() {
   });
 }
 
+export function useForgotPassword() {
+  return useMutation({
+    mutationFn: (email: string) =>
+      call<{ status: string; message: string }>(
+        "POST",
+        "/v1/auth/forgot-password",
+        { email },
+      ),
+  });
+}
+
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: (args: { token: string; password: string }) =>
+      call<{ status: string }>("POST", "/v1/auth/reset-password", args),
+  });
+}
+
 export function useVerifyEmail() {
   return useMutation({
     mutationFn: (token: string) =>

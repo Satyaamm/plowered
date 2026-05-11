@@ -97,6 +97,7 @@ const GROUPS: Group[] = [
       { label: "Team",         href: "/team",        icon: <People24Regular /> },
       { label: "Identity",     href: "/identity",    icon: <Person24Regular /> },
       { label: "AI providers", href: "/settings/ai", icon: <Sparkle24Regular /> },
+      { label: "Account",      href: "/account",     icon: <Person24Regular /> },
     ],
   },
 ];

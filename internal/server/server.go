@@ -232,6 +232,8 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		"/v1/auth/resend-verification",
 		"/v1/auth/invite-info",
 		"/v1/auth/accept-invite",
+		"/v1/auth/forgot-password",
+		"/v1/auth/reset-password",
 	}
 	verify := buildHTTPVerifier(deps.Auth)
 
@@ -248,6 +250,10 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		apihttp.RecoveryMW(deps.Logger),
 		apihttp.RequestIDMW(),
 		apihttp.LoggingMW(deps.Logger),
+		// HSTS / CSP / X-Content-Type-Options / Frame / Referrer /
+		// Permissions / COOP / CORP. Standard hardening expected by
+		// SOC2 CC6.1 and OWASP secure-headers checklist.
+		apihttp.SecurityHeadersMW(),
 		apihttp.CORSMW(splitCSV(cfg.CORSAllowedOrigins)),
 		// Per-IP rate limit on the credential-mutation endpoints. 5/min,
 		// burst 8 — generous for a human, lethal for a brute-force bot.
@@ -255,6 +261,11 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		apihttp.AuthRateLimitMW(5, 8),
 		authMW,
 		apihttp.TenantMW(skipAuth...),
+		// Per-principal rate limit on the authenticated surface.
+		// Reads 120/min, writes 30/min. Lives AFTER auth so the key is
+		// the principal ID (not IP), letting legitimate users behind a
+		// NAT keep working at full speed.
+		apihttp.APIRateLimitMW(120, 30, skipAuth...),
 		apihttp.AuditMW(deps.AuditWriter, "plowered", cfg.Version, skipAuth...),
 	)
 	if deps.Metrics != nil {

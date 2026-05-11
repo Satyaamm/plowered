@@ -1,7 +1,9 @@
 package http
 
 import (
+	"math"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -63,7 +65,17 @@ func (r *authRateLimiter) janitor() {
 	}
 }
 
-func (r *authRateLimiter) allow(ip string) bool {
+// limitState is the snapshot returned with each request — the
+// middleware copies it into the RateLimit-* response headers so clients
+// can pace themselves without polling for 429.
+type limitState struct {
+	limit     int
+	remaining int
+	resetSec  int
+	allowed   bool
+}
+
+func (r *authRateLimiter) check(ip string) limitState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	b, ok := r.buckets[ip]
@@ -72,7 +84,27 @@ func (r *authRateLimiter) allow(ip string) bool {
 		r.buckets[ip] = b
 	}
 	b.seenAt = time.Now()
-	return b.limiter.Allow()
+	res := b.limiter.Reserve()
+	allowed := res.OK() && res.Delay() == 0
+	if !allowed && res.OK() {
+		res.Cancel() // don't consume a future token slot on rejection
+	}
+	tokens := math.Floor(b.limiter.Tokens())
+	if tokens < 0 {
+		tokens = 0
+	}
+	// Time until the bucket refills back to 1 token (= when the next
+	// allowed call becomes possible). Math: 1 token / rps seconds.
+	resetSec := int(math.Ceil(float64(time.Second) / float64(r.rps) / float64(time.Second)))
+	if resetSec < 1 {
+		resetSec = 1
+	}
+	return limitState{
+		limit:     r.burst,
+		remaining: int(tokens),
+		resetSec:  resetSec,
+		allowed:   allowed,
+	}
 }
 
 // AuthRateLimitMW returns a middleware that caps the four credential-
@@ -89,6 +121,8 @@ func AuthRateLimitMW(perMinute, burst int) Middleware {
 		"/v1/auth/signup":               true,
 		"/v1/auth/accept-invite":        true,
 		"/v1/auth/resend-verification":  true,
+		"/v1/auth/forgot-password":      true,
+		"/v1/auth/reset-password":       true,
 	}
 	rl := newAuthRateLimiter(perMinute, burst)
 	return func(next http.Handler) http.Handler {
@@ -97,9 +131,15 @@ func AuthRateLimitMW(perMinute, burst int) Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			ip := clientIP(r)
-			if !rl.allow(ip) {
-				w.Header().Set("Retry-After", "60")
+			st := rl.check(clientIP(r))
+			// IETF draft-ietf-httpapi-ratelimit-headers (now RFC 9239).
+			// Clients (curl, browsers, SDKs) read these to pace
+			// themselves instead of probing for 429.
+			w.Header().Set("RateLimit-Limit", strconv.Itoa(st.limit))
+			w.Header().Set("RateLimit-Remaining", strconv.Itoa(st.remaining))
+			w.Header().Set("RateLimit-Reset", strconv.Itoa(st.resetSec))
+			if !st.allowed {
+				w.Header().Set("Retry-After", strconv.Itoa(st.resetSec))
 				writeJSON(w, http.StatusTooManyRequests, errorBody{
 					"rate_limited",
 					"too many attempts — try again in a minute",

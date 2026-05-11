@@ -259,13 +259,29 @@ func loginHandler(d AuthDeps) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
+		req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 		u, err := d.Identity.GetByEmail(ctx, req.Email)
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, errorBody{"invalid_credentials",
 				"invalid email or password"})
 			return
 		}
+		// Locked account refusal lives BEFORE the password check so the
+		// lockout window can't be extended by spraying more attempts.
+		if u.Status == "locked" {
+			writeJSON(w, http.StatusForbidden, errorBody{"account_locked",
+				"account locked after too many failed login attempts. Reset your password to unlock."})
+			return
+		}
 		if err := identity.VerifyPassword(req.Password, u.PasswordHash); err != nil {
+			// Bump the per-user failed-login counter. Lock when we hit
+			// the threshold. The counter expires on its own after
+			// FailedLoginWindow so an honest user with a typo today
+			// isn't punished a week from now.
+			n, _ := d.Identity.RecordFailedLogin(ctx, u.ID, time.Now().UTC())
+			if n >= identity.FailedLoginThreshold {
+				_ = d.Identity.LockUser(ctx, u.ID, "failed_login_threshold", time.Now().UTC())
+			}
 			writeJSON(w, http.StatusUnauthorized, errorBody{"invalid_credentials",
 				"invalid email or password"})
 			return
@@ -275,6 +291,8 @@ func loginHandler(d AuthDeps) http.HandlerFunc {
 				"verify your email before signing in. Check your inbox or POST /v1/auth/resend-verification."})
 			return
 		}
+		// Success path: clear the failed-login counter.
+		_ = d.Identity.ResetFailedLogin(ctx, u.ID)
 
 		// Pick first membership = active tenant.
 		mems, err := d.Identity.ListForUser(ctx, u.ID)

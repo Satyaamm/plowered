@@ -34,7 +34,17 @@ var (
 	ErrEmailNotVerified  = errors.New("identity: email not verified")
 	ErrSessionExpired    = errors.New("identity: session expired")
 	ErrTokenInvalid      = errors.New("identity: token invalid or expired")
+	ErrAccountLocked     = errors.New("identity: account locked after too many failed logins")
 )
+
+// FailedLoginThreshold is the number of consecutive failures we tolerate
+// before locking the account. 5 is the OWASP / NIST recommendation.
+const FailedLoginThreshold = 5
+
+// FailedLoginWindow is how long failures linger before the counter
+// auto-resets. A single typo 30 minutes ago shouldn't combine with four
+// typos today to trigger lockout.
+const FailedLoginWindow = 15 * time.Minute
 
 // Tenant is one workspace — every domain row carries `tenant_id`. A
 // Tenant is created by signup; further users join via tenant_memberships.
@@ -77,6 +87,17 @@ type User struct {
 // IsEmailVerified reports whether the user has clicked the verification
 // link.
 func (u User) IsEmailVerified() bool { return !u.EmailVerifiedAt.IsZero() }
+
+// ProfileUpdate is the editable subset of User the self-service settings
+// page can mutate. Empty fields are skipped so the API can express
+// "change only the phone" as a single PATCH without echoing back every
+// other column.
+type ProfileUpdate struct {
+	FirstName    string
+	LastName     string
+	Phone        string
+	PhoneCountry string
+}
 
 // Membership ties a User to a Tenant with a role set. Multi-tenant users
 // have multiple rows; the active session pins one.
@@ -199,6 +220,29 @@ type Repo interface {
 	GetUserByID(ctx context.Context, id string) (*User, error)
 	MarkEmailVerified(ctx context.Context, id string, at time.Time) error
 	UpdateLastLogin(ctx context.Context, id, ip string, at time.Time) error
+	// UpdatePassword rotates the password hash. Used by the password-
+	// reset flow and the account-settings change-password endpoint.
+	UpdatePassword(ctx context.Context, userID, newHash string) error
+	// UpdateProfile mutates the editable subset of a user's row.
+	// Fields left empty on the patch are skipped. Used by /v1/account.
+	UpdateProfile(ctx context.Context, userID string, p ProfileUpdate) error
+
+	// RecordFailedLogin atomically bumps a user's failed-login counter
+	// and returns the new total. The login handler locks the account
+	// when the counter exceeds the threshold.
+	RecordFailedLogin(ctx context.Context, userID string, at time.Time) (int, error)
+	// ResetFailedLogin zeros the counter on a successful login.
+	ResetFailedLogin(ctx context.Context, userID string) error
+	// LockUser flags the account as locked. Until cleared, login is
+	// refused even with the correct password.
+	LockUser(ctx context.Context, userID, reason string, at time.Time) error
+	// UnlockUser clears the lock — used by a successful password reset.
+	UnlockUser(ctx context.Context, userID string) error
+	// PseudonymiseUser blanks out the personal-data columns and flips
+	// status='deleted' while preserving the user_id for audit-trail
+	// retention (GDPR Art. 17(3)(b) — compliance with a legal
+	// obligation).
+	PseudonymiseUser(ctx context.Context, userID, stubEmail string, at time.Time) error
 
 	// Memberships
 	CreateMembership(ctx context.Context, m *Membership) error
@@ -222,6 +266,12 @@ type Repo interface {
 	CreateSession(ctx context.Context, s *Session) (*Session, error)
 	GetSession(ctx context.Context, id string) (*Session, error)
 	RevokeSession(ctx context.Context, id, reason string, at time.Time) error
+	// RevokeAllSessionsForUser kills every active session belonging to
+	// the given user. Used by password reset + "sign out everywhere".
+	RevokeAllSessionsForUser(ctx context.Context, userID, reason string, at time.Time) error
+	// ListActiveSessionsForUser powers the "active sessions" tab in
+	// account settings so a user can see (and revoke) their devices.
+	ListActiveSessionsForUser(ctx context.Context, userID string) ([]*Session, error)
 	TouchSession(ctx context.Context, id string, at time.Time) error
 
 	// Verification tokens

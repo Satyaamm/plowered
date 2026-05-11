@@ -131,6 +131,9 @@ func NewMux(d Deps) *http.ServeMux {
 		}
 		authHandlers(mux, authDeps)
 		teamHandlers(mux, authDeps)
+		passwordResetHandlers(mux, authDeps)
+		accountHandlers(mux, authDeps)
+		accountGDPRHandlers(mux, authDeps)
 	}
 	if d.Connections != nil && d.ConnRegistry != nil {
 		connectionHandlers(mux, ConnectionDeps{

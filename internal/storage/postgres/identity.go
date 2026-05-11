@@ -321,6 +321,91 @@ func (s *IdentityStore) TouchSession(ctx context.Context, id string, at time.Tim
 	return err
 }
 
+func (s *IdentityStore) RevokeAllSessionsForUser(ctx context.Context, userID, reason string, at time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE sessions SET revoked_at = $2, revoked_reason = $3
+		 WHERE user_id = $1::uuid AND revoked_at IS NULL`,
+		userID, at, reason)
+	if err != nil {
+		return fmt.Errorf("identity: revoke all sessions: %w", err)
+	}
+	return nil
+}
+
+func (s *IdentityStore) ListActiveSessionsForUser(ctx context.Context, userID string) ([]*identity.Session, error) {
+	const q = `
+		SELECT id::text, user_id::text, tenant_id::text,
+		       COALESCE(ip, ''), COALESCE(user_agent, ''),
+		       issued_at, last_seen_at, expires_at,
+		       COALESCE(revoked_at, '0001-01-01 00:00:00+00'::timestamptz),
+		       COALESCE(revoked_reason, '')
+		  FROM sessions
+		 WHERE user_id = $1::uuid
+		   AND revoked_at IS NULL
+		   AND expires_at > now()
+		 ORDER BY last_seen_at DESC`
+	rows, err := s.pool.Query(ctx, q, userID)
+	if err != nil {
+		return nil, fmt.Errorf("identity: list sessions: %w", err)
+	}
+	defer rows.Close()
+	var out []*identity.Session
+	for rows.Next() {
+		var sess identity.Session
+		if err := rows.Scan(
+			&sess.ID, &sess.UserID, &sess.TenantID,
+			&sess.IP, &sess.UserAgent,
+			&sess.IssuedAt, &sess.LastSeenAt, &sess.ExpiresAt,
+			&sess.RevokedAt, &sess.RevokedReason,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, &sess)
+	}
+	return out, rows.Err()
+}
+
+func (s *IdentityStore) UpdatePassword(ctx context.Context, userID, newHash string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE users SET password_hash = $2, updated_at = now()
+		 WHERE id = $1::uuid`,
+		userID, newHash)
+	if err != nil {
+		return fmt.Errorf("identity: update password: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return identity.ErrNotFound
+	}
+	return nil
+}
+
+func (s *IdentityStore) UpdateProfile(ctx context.Context, userID string, p identity.ProfileUpdate) error {
+	// COALESCE-with-NULLIF trick lets us conditionally update each
+	// column: pass empty string for "skip"; pass a real value to write.
+	// full_name is re-derived server-side when either name changes.
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE users
+		   SET first_name = COALESCE(NULLIF($2, ''), first_name),
+		       last_name  = COALESCE(NULLIF($3, ''), last_name),
+		       full_name  = CASE
+		                      WHEN $2 <> '' OR $3 <> '' THEN
+		                        trim(COALESCE(NULLIF($2, ''), first_name) || ' ' || COALESCE(NULLIF($3, ''), last_name))
+		                      ELSE full_name
+		                    END,
+		       phone         = $4,
+		       phone_country = $5,
+		       updated_at    = now()
+		 WHERE id = $1::uuid`,
+		userID, p.FirstName, p.LastName, p.Phone, p.PhoneCountry)
+	if err != nil {
+		return fmt.Errorf("identity: update profile: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return identity.ErrNotFound
+	}
+	return nil
+}
+
 // ----- VerificationRepo -----
 
 func (s *IdentityStore) CreateVerification(ctx context.Context, v *identity.Verification) error {
@@ -369,6 +454,104 @@ func (s *IdentityStore) MarkUsed(ctx context.Context, id string, at time.Time) e
 	}
 	if tag.RowsAffected() == 0 {
 		return identity.ErrTokenInvalid
+	}
+	return nil
+}
+
+// ----- Login lockout -----
+
+// RecordFailedLogin uses an atomic UPDATE so concurrent failed logins
+// (botnet spraying) can't race to bypass the threshold. The reset_at
+// window is honored: a stale counter (older than FailedLoginWindow) is
+// treated as 0 + restarted.
+func (s *IdentityStore) RecordFailedLogin(ctx context.Context, userID string, at time.Time) (int, error) {
+	resetCutoff := at.Add(-identity.FailedLoginWindow)
+	const q = `
+		UPDATE users
+		   SET failed_login_count = CASE
+		                             WHEN failed_login_reset_at IS NULL OR failed_login_reset_at < $2 THEN 1
+		                             ELSE failed_login_count + 1
+		                           END,
+		       failed_login_reset_at = CASE
+		                             WHEN failed_login_reset_at IS NULL OR failed_login_reset_at < $2 THEN $3
+		                             ELSE failed_login_reset_at
+		                           END
+		 WHERE id = $1::uuid
+		RETURNING failed_login_count`
+	var n int
+	if err := s.pool.QueryRow(ctx, q, userID, resetCutoff, at.Add(identity.FailedLoginWindow)).Scan(&n); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, identity.ErrNotFound
+		}
+		return 0, fmt.Errorf("identity: record failed login: %w", err)
+	}
+	return n, nil
+}
+
+func (s *IdentityStore) ResetFailedLogin(ctx context.Context, userID string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE users SET failed_login_count = 0, failed_login_reset_at = NULL
+		 WHERE id = $1::uuid`, userID)
+	return err
+}
+
+func (s *IdentityStore) LockUser(ctx context.Context, userID, reason string, at time.Time) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE users SET status = 'locked', locked_at = $2, locked_reason = $3, updated_at = now()
+		 WHERE id = $1::uuid`,
+		userID, at, reason)
+	if err != nil {
+		return fmt.Errorf("identity: lock user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return identity.ErrNotFound
+	}
+	return nil
+}
+
+func (s *IdentityStore) PseudonymiseUser(ctx context.Context, userID, stubEmail string, at time.Time) error {
+	// Wipe every PII column atomically. The UNIQUE(email_lower)
+	// constraint on users is honored by stubbing the email to a
+	// deleted-<uuid>@deleted.invalid placeholder generated by the
+	// caller, so the user's old email is free for re-registration.
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE users
+		   SET email         = $2,
+		       first_name    = '',
+		       last_name     = '',
+		       full_name     = '',
+		       phone         = '',
+		       phone_country = '',
+		       avatar_url    = '',
+		       password_hash = '',
+		       status        = 'deleted',
+		       locked_at     = NULL,
+		       locked_reason = '',
+		       updated_at    = $3
+		 WHERE id = $1::uuid`,
+		userID, stubEmail, at)
+	if err != nil {
+		return fmt.Errorf("identity: pseudonymise user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return identity.ErrNotFound
+	}
+	return nil
+}
+
+func (s *IdentityStore) UnlockUser(ctx context.Context, userID string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE users
+		   SET status = 'active', locked_at = NULL, locked_reason = '',
+		       failed_login_count = 0, failed_login_reset_at = NULL,
+		       updated_at = now()
+		 WHERE id = $1::uuid`,
+		userID)
+	if err != nil {
+		return fmt.Errorf("identity: unlock user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return identity.ErrNotFound
 	}
 	return nil
 }
