@@ -249,6 +249,10 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		apihttp.RequestIDMW(),
 		apihttp.LoggingMW(deps.Logger),
 		apihttp.CORSMW(splitCSV(cfg.CORSAllowedOrigins)),
+		// Per-IP rate limit on the credential-mutation endpoints. 5/min,
+		// burst 8 — generous for a human, lethal for a brute-force bot.
+		// Lives BEFORE auth so unauthenticated probes can be throttled.
+		apihttp.AuthRateLimitMW(5, 8),
 		authMW,
 		apihttp.TenantMW(skipAuth...),
 		apihttp.AuditMW(deps.AuditWriter, "plowered", cfg.Version, skipAuth...),

@@ -3,7 +3,9 @@ package http
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
 	"github.com/Satyaamm/plowered/internal/core/secrets"
@@ -43,7 +45,7 @@ type aiProviderReq struct {
 	IsPrimary  bool   `json:"is_primary,omitempty"`
 }
 
-func (r aiProviderReq) validate(requireKey bool) error {
+func (r aiProviderReq) validate(ctx context.Context, requireKey bool) error {
 	if r.Name == "" {
 		return errors.New("name is required")
 	}
@@ -61,6 +63,14 @@ func (r aiProviderReq) validate(requireKey bool) error {
 	}
 	if requireKey && r.APIKey == "" {
 		return errors.New("api_key is required")
+	}
+	// SSRF guard: reject base_urls that resolve to private / loopback /
+	// metadata IPs. Skipped for empty base_urls (the well-known
+	// providers' defaults are public domains we trust).
+	if strings.TrimSpace(r.BaseURL) != "" {
+		if err := aiprovider.ValidateBaseURL(ctx, r.BaseURL); err != nil {
+			return fmt.Errorf("base_url rejected: %w", err)
+		}
 	}
 	return nil
 }
@@ -112,7 +122,7 @@ func createAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.Han
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
 			return
 		}
-		if err := req.validate(true); err != nil {
+		if err := req.validate(r.Context(), true); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
 			return
 		}
@@ -183,7 +193,7 @@ func updateAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.Han
 			return
 		}
 		// Rotating the key is optional on PATCH.
-		if err := req.validate(false); err != nil {
+		if err := req.validate(r.Context(), false); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
 			return
 		}
@@ -310,7 +320,7 @@ func testInlineAIProviderHandler() http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
 			return
 		}
-		if err := req.validate(true); err != nil {
+		if err := req.validate(r.Context(), true); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
 			return
 		}

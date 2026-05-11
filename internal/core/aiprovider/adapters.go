@@ -25,18 +25,23 @@ func Build(cfg *Config, apiKey []byte) (llm.Provider, error) {
 	if cfg == nil {
 		return nil, errors.New("aiprovider: nil config")
 	}
+	// Use the SSRF-aware client for every outbound request so a custom
+	// base_url can't reach 127.0.0.1, the cloud metadata endpoint, or
+	// any private network. The check is bypassed when the operator sets
+	// PLOWERED_ALLOW_PRIVATE_AI_HOSTS=1 (dev convenience for Ollama).
+	client := SafeHTTPClient(60 * time.Second)
 	switch cfg.Kind {
 	case KindAnthropic:
-		return &anthropicProvider{baseURL: pick(cfg.BaseURL, "https://api.anthropic.com"), model: cfg.Model, apiKey: string(apiKey), client: defaultHTTP()}, nil
+		return &anthropicProvider{baseURL: pick(cfg.BaseURL, "https://api.anthropic.com"), model: cfg.Model, apiKey: string(apiKey), client: client}, nil
 	case KindOpenAI:
-		return &openaiProvider{baseURL: pick(cfg.BaseURL, "https://api.openai.com"), model: cfg.Model, apiKey: string(apiKey), name: "openai:" + cfg.Model, client: defaultHTTP()}, nil
+		return &openaiProvider{baseURL: pick(cfg.BaseURL, "https://api.openai.com"), model: cfg.Model, apiKey: string(apiKey), name: "openai:" + cfg.Model, client: client}, nil
 	case KindDeepSeek:
-		return &openaiProvider{baseURL: pick(cfg.BaseURL, "https://api.deepseek.com"), model: cfg.Model, apiKey: string(apiKey), name: "deepseek:" + cfg.Model, client: defaultHTTP()}, nil
+		return &openaiProvider{baseURL: pick(cfg.BaseURL, "https://api.deepseek.com"), model: cfg.Model, apiKey: string(apiKey), name: "deepseek:" + cfg.Model, client: client}, nil
 	case KindCustom:
 		if cfg.BaseURL == "" {
 			return nil, errors.New("aiprovider: custom provider requires base_url")
 		}
-		return &openaiProvider{baseURL: cfg.BaseURL, model: cfg.Model, apiKey: string(apiKey), name: "custom:" + cfg.Model, client: defaultHTTP()}, nil
+		return &openaiProvider{baseURL: cfg.BaseURL, model: cfg.Model, apiKey: string(apiKey), name: "custom:" + cfg.Model, client: client}, nil
 	default:
 		return nil, fmt.Errorf("aiprovider: unknown kind %q", cfg.Kind)
 	}
@@ -85,8 +90,12 @@ func pick(a, fallback string) string {
 	return strings.TrimRight(a, "/")
 }
 
+// defaultHTTP is the SSRF-aware client used by the cheap credential
+// probe (testAnthropic / testOpenAI). 10s timeout is enough for a
+// single GET /v1/models against any real upstream and short enough to
+// fail fast on a black-holed config.
 func defaultHTTP() *http.Client {
-	return &http.Client{Timeout: 60 * time.Second}
+	return SafeHTTPClient(10 * time.Second)
 }
 
 // ----- Anthropic -----

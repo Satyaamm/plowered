@@ -1,6 +1,7 @@
 package http
 
 import (
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -133,6 +134,11 @@ func clientIP(r *http.Request) string {
 	}
 	if h := r.Header.Get("X-Real-IP"); h != "" {
 		return strings.TrimSpace(h)
+	}
+	// RemoteAddr is "host:port" — strip the port so the rate-limit
+	// bucket and audit row see the same address across reconnects.
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
 	return r.RemoteAddr
 }
