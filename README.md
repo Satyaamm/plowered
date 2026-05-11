@@ -198,29 +198,29 @@ signup → invite → accept → list members in-process with the MemoryRepo.
 
 Earlier seven feature tracks (foundations):
 
-1. ✅ Real signup form with full validation + per-field strength meter
-2. ✅ OpenAPI 3.1 spec + embedded Swagger UI
-3. ✅ Async classify + reindex via Asynq + durable jobs table
-4. ✅ BYOM (Anthropic / OpenAI / DeepSeek / openai-compatible) + Test button
-5. ✅ Teams + invitations end-to-end
-6. ✅ Snowflake adapter (live) + BigQuery scaffold
-7. ✅ Consolidated in-process e2e test
+1. Real signup form with full validation + per-field strength meter
+2. OpenAPI 3.1 spec + embedded Swagger UI
+3. Async classify + reindex via Asynq + durable jobs table
+4. BYOM (Anthropic / OpenAI / DeepSeek / openai-compatible) + Test button
+5. Teams + invitations end-to-end
+6. Snowflake adapter (live) + BigQuery scaffold
+7. Consolidated in-process e2e test
 
 Recent security + compliance pass (SOC 2 / GDPR / HIPAA prep):
 
-1. ✅ Forgot-password / reset-password flow (BE + FE) with session revocation
-2. ✅ Account self-service page — profile, password change, active sessions,
+1. Forgot-password / reset-password flow (BE + FE) with session revocation
+2. Account self-service page — profile, password change, active sessions,
       "sign out everywhere"
-3. ✅ Account lockout after 5 failed logins in a 15-min window
+3. Account lockout after 5 failed logins in a 15-min window
       (OWASP / NIST 800-63B)
-4. ✅ Per-IP auth rate limit + per-principal API limit (120 read / 30 write
+4. Per-IP auth rate limit + per-principal API limit (120 read / 30 write
       per min) with RFC 9239 `RateLimit-*` headers on both tiers
-5. ✅ Bookmarkable `/jobs/{id}` detail page with progress bar + status badge
-6. ✅ `SecurityHeadersMW` — HSTS, strict CSP, X-Frame-Options DENY,
+5. Bookmarkable `/jobs/{id}` detail page with progress bar + status badge
+6. `SecurityHeadersMW` — HSTS, strict CSP, X-Frame-Options DENY,
       Referrer-Policy, Permissions-Policy, COOP + CORP globally
-7. ✅ GDPR self-service: `GET /v1/account/export` (Art. 15 / 20),
+7. GDPR self-service: `GET /v1/account/export` (Art. 15 / 20),
       `DELETE /v1/account?confirm=true` (Art. 17 pseudonymisation)
-8. ✅ `COMPLIANCE.md` updated with the new controls and a real gap document
+8. `COMPLIANCE.md` updated with the new controls and a real gap document
       covering remaining code + operational work (MFA, SSO, BAA, Type II
       audit window, pen test, Trust Center, etc.)
 
