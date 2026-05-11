@@ -89,7 +89,7 @@ export function useSignup() {
       phone?: string;
       phone_country?: string;
       workspace_name: string;
-      workspace_slug?: string;
+      workspace_slug: string;
       accept_terms?: boolean;
     }) =>
       call<{ tenant_id: string; user_id: string; status: string; message: string }>(

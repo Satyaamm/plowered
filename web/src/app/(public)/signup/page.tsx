@@ -75,6 +75,7 @@ const useStyles = makeStyles({
 
 interface FieldErrors {
   workspace?: string;
+  workspaceSlug?: string;
   firstName?: string;
   lastName?: string;
   email?: string;
@@ -88,6 +89,7 @@ interface FieldErrors {
 // side. We just want to catch obvious typos like missing "@".
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NAME_RE = /^[\p{L}\p{M}\s'.,\-]+$/u; // letters/marks/punct only, no digits or symbols
+const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
 function phoneDigits(s: string): string {
   return s.replace(/\D+/g, "");
@@ -122,6 +124,7 @@ export default function SignupPage() {
   const signup = useSignup();
 
   const [workspace, setWorkspace] = useState("");
+  const [workspaceSlug, setWorkspaceSlug] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -133,8 +136,8 @@ export default function SignupPage() {
   const [confirm, setConfirm] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [touched, setTouched] = useState<Record<keyof FieldErrors, boolean>>({
-    workspace: false, firstName: false, lastName: false, email: false,
-    phone: false, password: false, confirm: false, terms: false,
+    workspace: false, workspaceSlug: false, firstName: false, lastName: false,
+    email: false, phone: false, password: false, confirm: false, terms: false,
   });
 
   const strength = useMemo(() => passwordScore(password), [password]);
@@ -146,6 +149,13 @@ export default function SignupPage() {
     if (!wsTrim) e.workspace = "Workspace name is required";
     else if (wsTrim.length < 2) e.workspace = "At least 2 characters";
     else if (wsTrim.length > 64) e.workspace = "64 characters max";
+
+    const slugTrim = workspaceSlug.trim().toLowerCase();
+    if (!slugTrim) e.workspaceSlug = "Workspace URL is required";
+    else if (slugTrim.length < 2) e.workspaceSlug = "At least 2 characters";
+    else if (slugTrim.length > 40) e.workspaceSlug = "40 characters max";
+    else if (!SLUG_RE.test(slugTrim))
+      e.workspaceSlug = "Lowercase letters, digits and dashes only";
 
     const fnTrim = firstName.trim();
     if (!fnTrim) e.firstName = "First name is required";
@@ -186,7 +196,7 @@ export default function SignupPage() {
 
     return e;
   }, [
-    workspace, firstName, lastName, email, phone, phoneCountry,
+    workspace, workspaceSlug, firstName, lastName, email, phone, phoneCountry,
     password, confirm, acceptTerms, strength.score,
   ]);
 
@@ -195,13 +205,14 @@ export default function SignupPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouched({
-      workspace: true, firstName: true, lastName: true, email: true,
-      phone: true, password: true, confirm: true, terms: true,
+      workspace: true, workspaceSlug: true, firstName: true, lastName: true,
+      email: true, phone: true, password: true, confirm: true, terms: true,
     });
     if (!valid) return;
     try {
       await signup.mutateAsync({
         workspace_name: workspace.trim(),
+        workspace_slug: workspaceSlug.trim().toLowerCase(),
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         email: email.trim().toLowerCase(),
@@ -249,6 +260,25 @@ export default function SignupPage() {
             onChange={(_, d) => setWorkspace(d.value)}
             onBlur={() => setTouched((t) => ({ ...t, workspace: true }))}
             maxLength={64}
+            disabled={signup.isPending}
+          />
+        </Field>
+
+        <Field
+          label="Workspace URL"
+          required
+          hint="plowered.com/w/<slug> — lowercase letters, digits and dashes."
+          validationState={showErr("workspaceSlug") ? "error" : "none"}
+          validationMessage={showErr("workspaceSlug")}
+        >
+          <Input
+            value={workspaceSlug}
+            onChange={(_, d) =>
+              setWorkspaceSlug(d.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+            }
+            onBlur={() => setTouched((t) => ({ ...t, workspaceSlug: true }))}
+            placeholder="acme-data"
+            maxLength={40}
             disabled={signup.isPending}
           />
         </Field>

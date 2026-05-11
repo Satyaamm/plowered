@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -63,7 +62,7 @@ type signupReq struct {
 	Phone           string `json:"phone,omitempty"`         // subscriber digits
 	PhoneCountry    string `json:"phone_country,omitempty"` // dial code, e.g. "+1"
 	WorkspaceName   string `json:"workspace_name"`
-	WorkspaceSlug   string `json:"workspace_slug"` // optional; derived from name when blank
+	WorkspaceSlug   string `json:"workspace_slug"` // required; URL-safe identifier picked by the user
 	AcceptTerms     bool   `json:"accept_terms,omitempty"`
 }
 
@@ -120,18 +119,14 @@ func signupHandler(d AuthDeps) http.HandlerFunc {
 		}
 
 		// 2. Create tenant.
-		slug := req.WorkspaceSlug
-		if slug == "" {
-			slug = slugify(req.WorkspaceName)
-		}
 		tenant, err := d.Identity.CreateTenant(ctx, &identity.Tenant{
-			Slug: slug,
+			Slug: req.WorkspaceSlug,
 			Name: req.WorkspaceName,
 		})
 		if err != nil {
 			if errors.Is(err, identity.ErrSlugTaken) {
 				writeJSON(w, http.StatusConflict, errorBody{"slug_taken",
-					"workspace slug already in use; pick another or omit to auto-generate"})
+					"workspace slug already in use; pick another"})
 				return
 			}
 			writeError(w, err)
@@ -390,6 +385,11 @@ var dialCodeRE = regexp.MustCompile(`^\+\d{1,4}$`)
 // can't carry obvious garbage like "test1234".
 var nameRE = regexp.MustCompile(`^[\p{L}\p{M}][\p{L}\p{M}\s'.,\-]*$`)
 
+// workspaceSlugRE accepts lowercase letters, digits and dashes — must
+// start and end with an alphanumeric. Picked by the user at signup;
+// becomes the workspace's URL-safe identifier (e.g. `acme-data`).
+var workspaceSlugRE = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
+
 func validateSignup(req *signupReq) error {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	if req.Email == "" {
@@ -416,6 +416,19 @@ func validateSignup(req *signupReq) error {
 	}
 	if len(req.WorkspaceName) > 64 {
 		return errors.New("workspace_name exceeds 64 characters")
+	}
+	req.WorkspaceSlug = strings.ToLower(strings.TrimSpace(req.WorkspaceSlug))
+	if req.WorkspaceSlug == "" {
+		return errors.New("workspace_slug is required")
+	}
+	if len(req.WorkspaceSlug) < 2 {
+		return errors.New("workspace_slug must be at least 2 characters")
+	}
+	if len(req.WorkspaceSlug) > 40 {
+		return errors.New("workspace_slug exceeds 40 characters")
+	}
+	if !workspaceSlugRE.MatchString(req.WorkspaceSlug) {
+		return errors.New("workspace_slug may only contain lowercase letters, digits and dashes, and may not start or end with a dash")
 	}
 	req.FirstName = strings.TrimSpace(req.FirstName)
 	req.LastName = strings.TrimSpace(req.LastName)
@@ -567,34 +580,6 @@ func clearSessionCookie(w http.ResponseWriter, cfg AuthConfig) {
 }
 
 // clientIP lives in audit_mw.go; reuse it.
-
-// slugify lower-cases + replaces non-alphanumeric runs with single dash.
-func slugify(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	out := strings.Builder{}
-	prevDash := true
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z',
-			r >= '0' && r <= '9':
-			out.WriteRune(r)
-			prevDash = false
-		default:
-			if !prevDash {
-				out.WriteRune('-')
-				prevDash = true
-			}
-		}
-	}
-	res := strings.Trim(out.String(), "-")
-	if res == "" {
-		res = fmt.Sprintf("workspace-%d", time.Now().Unix())
-	}
-	if len(res) > 48 {
-		res = res[:48]
-	}
-	return res
-}
 
 // _ keeps auth.Principal referenced for clarity even when none of the
 // returns directly export it; principalFrom returns the typed struct.
