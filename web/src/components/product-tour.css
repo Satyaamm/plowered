@@ -1,0 +1,230 @@
+/*
+ * Plowered product tour — driver.js overrides themed in Cloudflare
+ * orange, white card on warm-grey overlay, smooth fade + scale on
+ * popover open, and a pulsing brand halo around the highlighted
+ * element so the user's eye lands on the spotlight every step.
+ */
+
+/* ---------- Popover card ---------- */
+
+.driver-popover.plowered-tour {
+  background: #FFFFFF;
+  color: #1F2937;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px rgba(243, 128, 32, 0.20),
+    0 16px 48px rgba(0, 0, 0, 0.18),
+    0 4px 14px rgba(243, 128, 32, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+  padding: 22px 22px 16px;
+  max-width: 400px;
+  animation: plowered-tour-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes plowered-tour-pop {
+  0%   { opacity: 0; transform: scale(0.88) translateY(8px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Brand accent strip at the top of every popover */
+.driver-popover.plowered-tour::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #F38020 0%, #FBC388 50%, #F38020 100%);
+  border-radius: 12px 12px 0 0;
+}
+
+/* ---------- Title ---------- */
+
+.driver-popover.plowered-tour .driver-popover-title {
+  color: #F38020;
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 10px;
+  padding-right: 28px;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- Description ---------- */
+
+.driver-popover.plowered-tour .driver-popover-description {
+  color: #374151;
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+/* ---------- Progress text ---------- */
+
+.driver-popover.plowered-tour .driver-popover-progress-text {
+  color: #F38020;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  background: rgba(243, 128, 32, 0.08);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* ---------- Footer + buttons ---------- */
+
+.driver-popover.plowered-tour .driver-popover-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #F3F4F6;
+}
+
+.driver-popover.plowered-tour .driver-popover-footer button {
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-shadow: none;
+  transition: background-color 120ms ease,
+              transform 120ms ease,
+              box-shadow 120ms ease;
+}
+
+.driver-popover.plowered-tour .driver-popover-prev-btn {
+  background: transparent;
+  color: #6B7280;
+}
+.driver-popover.plowered-tour .driver-popover-prev-btn:hover:not(:disabled) {
+  background: #F3F4F6;
+  color: #1F2937;
+}
+.driver-popover.plowered-tour .driver-popover-prev-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.driver-popover.plowered-tour .driver-popover-next-btn {
+  background: linear-gradient(180deg, #F38020 0%, #D86E18 100%);
+  color: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(243, 128, 32, 0.35);
+}
+.driver-popover.plowered-tour .driver-popover-next-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(243, 128, 32, 0.45);
+  background: linear-gradient(180deg, #FA8B2B 0%, #E07418 100%);
+}
+.driver-popover.plowered-tour .driver-popover-next-btn:active {
+  transform: translateY(0);
+}
+
+/* ---------- Close button (top-right X) ---------- */
+
+.driver-popover.plowered-tour .driver-popover-close-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  color: #9CA3AF;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.driver-popover.plowered-tour .driver-popover-close-btn:hover {
+  background: #F3F4F6;
+  color: #1F2937;
+}
+
+/* ---------- Popover arrow ---------- */
+
+.driver-popover.plowered-tour .driver-popover-arrow-side-top.driver-popover-arrow {
+  border-top-color: #FFFFFF;
+}
+.driver-popover.plowered-tour .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-bottom-color: #FFFFFF;
+}
+.driver-popover.plowered-tour .driver-popover-arrow-side-left.driver-popover-arrow {
+  border-left-color: #FFFFFF;
+}
+.driver-popover.plowered-tour .driver-popover-arrow-side-right.driver-popover-arrow {
+  border-right-color: #FFFFFF;
+}
+
+/* ---------- Overlay backdrop ---------- */
+
+.driver-overlay {
+  fill: rgba(15, 23, 42, 0.55) !important;
+  transition: fill 240ms ease;
+}
+
+/* ---------- Spotlight halo on the active element ---------- */
+
+.driver-active-element {
+  outline: 2px solid #F38020 !important;
+  outline-offset: 4px;
+  border-radius: 6px;
+  animation: plowered-tour-halo 1800ms ease-in-out infinite;
+}
+
+@keyframes plowered-tour-halo {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(243, 128, 32, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(243, 128, 32, 0);
+  }
+}
+
+/* ---------- Auto-advance progress bar (bottom of popover) ---------- */
+
+.plowered-tour-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(243, 128, 32, 0.08);
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+}
+.plowered-tour-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #F38020, #FBC388, #F38020);
+  background-size: 200% 100%;
+  animation-name: plowered-tour-fill;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes plowered-tour-fill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+
+/* ---------- Skip tour link (footer left) ---------- */
+
+.plowered-tour-skip {
+  margin-right: auto;
+  background: transparent;
+  border: none;
+  color: #9CA3AF;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 120ms ease;
+}
+.plowered-tour-skip:hover {
+  color: #F38020;
+}
