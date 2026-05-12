@@ -22,7 +22,7 @@ import {
   Body1,
   Button,
   Caption1,
-  Drawer,
+  InlineDrawer,
   DrawerBody,
   DrawerHeader,
   DrawerHeaderTitle,
@@ -196,9 +196,18 @@ function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
 const useStyles = makeStyles({
   shell: {
     display: "grid",
-    gridTemplateColumns: "220px 1fr",
+    // gridTemplateColumns is set inline below — switches to a 3-col
+    // layout when the task drawer is open so the canvas stays
+    // visible AND interactive next to the panel (inline drawer
+    // pattern, not an overlay).
     gap: "12px",
     height: "560px",
+  },
+  drawer: {
+    boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
+    borderRadius: "6px",
+    overflow: "hidden",
+    backgroundColor: tokens.colorNeutralBackground1,
   },
   palette: {
     backgroundColor: tokens.colorNeutralBackground1,
@@ -389,7 +398,12 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
         </MessageBar>
       )}
 
-      <div className={styles.shell}>
+      <div
+        className={styles.shell}
+        style={{
+          gridTemplateColumns: selected ? "220px 1fr 420px" : "220px 1fr",
+        }}
+      >
         <aside className={styles.palette}>
           <Subtitle2>Task palette</Subtitle2>
           <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
@@ -449,24 +463,11 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
             </ReactFlowProvider>
           </div>
         </div>
-      </div>
 
-      {/* Right-side task settings drawer.
-          modalType="non-modal" is critical: the default modal drawer
-          drops a backdrop that captures pointer events, which means
-          you can't drag a node while the panel is open. Non-modal
-          lets the canvas stay interactive — exactly the n8n /
-          Dagster pattern. */}
-      <Drawer
-        open={!!selected}
-        onOpenChange={(_, d) => {
-          if (!d.open) setSelectedID(null);
-        }}
-        modalType="non-modal"
-        position="end"
-        separator
-        size="medium"
-      >
+        {/* Task settings drawer — inline (not overlay) so it occupies
+            its own grid column and the canvas stays interactive while
+            you edit a node. Same pattern n8n and Dagster use. */}
+        <InlineDrawer open={!!selected} position="end" separator className={styles.drawer}>
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
@@ -555,7 +556,8 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
             </div>
           </DrawerBody>
         )}
-      </Drawer>
+        </InlineDrawer>
+      </div>
     </div>
   );
 }
