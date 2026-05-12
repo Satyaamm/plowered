@@ -7,11 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "demo": "playwright test --project=chromium --headed",
+    "demo:headless": "playwright test"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.56.0",
     "@fluentui/react-icons": "^2.0.270",
+    "@fluentui/react-timepicker-compat": "^0.4.34",
     "@hookform/resolvers": "^3.9.1",
     "@tanstack/react-query": "^5.62.0",
     "@tanstack/react-table": "^8.20.5",
@@ -27,6 +30,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

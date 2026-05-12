@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Button,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -65,7 +66,14 @@ function ResetInner() {
       subtitle="8+ chars with at least three of: lowercase, uppercase, digit, symbol."
     >
       <form className={styles.form} onSubmit={submit} noValidate>
-        <Field label="New password" required>
+        <Field
+          label={
+            <InfoLabel info="Hashed with Argon2id — never stored in plaintext. Must be 8+ chars with 3 of: lowercase, uppercase, digit, symbol. Resetting signs out every other session immediately.">
+              New password
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type="password"
             autoComplete="new-password"
@@ -75,7 +83,14 @@ function ResetInner() {
             disabled={reset.isPending}
           />
         </Field>
-        <Field label="Confirm new password" required>
+        <Field
+          label={
+            <InfoLabel info="Re-enter the new password exactly. The submit button stays disabled until both fields match — a guardrail against typos that would otherwise lock you out.">
+              Confirm new password
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type="password"
             autoComplete="new-password"

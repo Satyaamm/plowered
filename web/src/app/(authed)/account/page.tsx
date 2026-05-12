@@ -9,6 +9,7 @@ import {
   Caption1,
   Card,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -132,21 +133,51 @@ function ProfileTab({ me }: { me: { full_name: string; email: string } }) {
       </Caption1>
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div className={styles.row}>
-          <Field label="First name">
+          <Field
+            label={
+              <InfoLabel info="Shown to teammates in mentions, audit events, and the avatar menu. Use the name you go by, not necessarily what's on your ID.">
+                First name
+              </InfoLabel>
+            }
+          >
             <Input value={firstName} onChange={(_, d) => setFirstName(d.value)} maxLength={64} />
           </Field>
-          <Field label="Last name">
+          <Field
+            label={
+              <InfoLabel info="Optional. Combined with your first name to render your display name across the product.">
+                Last name
+              </InfoLabel>
+            }
+          >
             <Input value={lastName} onChange={(_, d) => setLastName(d.value)} maxLength={64} />
           </Field>
         </div>
-        <Field label="Email (read-only)">
+        <Field
+          label={
+            <InfoLabel info="Your login email is locked to the address you signed up with. To change it, ask an admin to invite the new address and remove this account.">
+              Email (read-only)
+            </InfoLabel>
+          }
+        >
           <Input value={me.email} disabled />
         </Field>
         <div className={styles.row}>
-          <Field label="Country code">
+          <Field
+            label={
+              <InfoLabel info="E.164 country code (e.g. +1, +44, +91). Used to format the phone number and route SMS verifications.">
+                Country code
+              </InfoLabel>
+            }
+          >
             <Input value={phoneCountry} onChange={(_, d) => setPhoneCountry(d.value)} />
           </Field>
-          <Field label="Phone (optional)">
+          <Field
+            label={
+              <InfoLabel info="Optional. Used for SMS verification and as a fallback for breakglass account recovery. Never shown to other tenants.">
+                Phone (optional)
+              </InfoLabel>
+            }
+          >
             <Input
               type="tel"
               value={phone}
@@ -206,17 +237,34 @@ function SecurityTab() {
         to sign in again with the new password.
       </Caption1>
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <Field label="Current password" required>
+        <Field
+          label={
+            <InfoLabel info="Required to prove this is really you before we rotate the credential. After three wrong attempts the password change is locked for 15 minutes.">
+              Current password
+            </InfoLabel>
+          }
+          required
+        >
           <Input type="password" value={current} onChange={(_, d) => setCurrent(d.value)} maxLength={256} />
         </Field>
         <Field
-          label="New password"
+          label={
+            <InfoLabel info="Hashed with Argon2id (m=64MB, t=3, p=4). Must be at least 8 characters and contain 3 of: lowercase, uppercase, digit, symbol. Passwords already breached on haveibeenpwned are rejected.">
+              New password
+            </InfoLabel>
+          }
           required
-          hint="8+ chars · 3 of: lowercase, uppercase, digit, symbol"
         >
           <Input type="password" value={next} onChange={(_, d) => setNext(d.value)} maxLength={256} />
         </Field>
-        <Field label="Confirm new password" required>
+        <Field
+          label={
+            <InfoLabel info="Type the new password again exactly. Mismatched values block the submit button to prevent typos that would lock you out.">
+              Confirm new password
+            </InfoLabel>
+          }
+          required
+        >
           <Input type="password" value={confirm} onChange={(_, d) => setConfirm(d.value)} maxLength={256} />
         </Field>
         {change.error && (

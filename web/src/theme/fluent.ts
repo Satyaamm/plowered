@@ -9,32 +9,31 @@ import {
   type Theme,
 } from "@fluentui/react-components";
 
-// 16-step brand ramp anchored on Cloudflare orange (#F38020 at 80).
-// Same shade Cloudflare uses across cloudflare.com, the dashboard, and
-// their developer docs. Light → dark.
+// 16-step brand ramp anchored on vivid violet (#7C3AED at 80) for the
+// PurpleCube AI Studio brand. Light → dark.
 export const ploweredBrand: BrandVariants = {
-  10:  "#FEF4E8",
-  20:  "#FDE6CC",
-  30:  "#FCD5A8",
-  40:  "#FBC388",
-  50:  "#F9AE65",
-  60:  "#F69842",
-  70:  "#F38C2A",
-  80:  "#F38020",
-  90:  "#D86E18",
-  100: "#BC5E10",
-  110: "#9F4F0A",
-  120: "#824006",
-  130: "#663104",
-  140: "#4D2502",
-  150: "#371A01",
-  160: "#221001",
+  10:  "#F3EEFE",
+  20:  "#E4D9FD",
+  30:  "#D2BFFB",
+  40:  "#BFA4F8",
+  50:  "#AB89F4",
+  60:  "#996FF0",
+  70:  "#895AEC",
+  80:  "#7C3AED",
+  90:  "#6D28D9",
+  100: "#5B21B6",
+  110: "#4C1D95",
+  120: "#3D1A77",
+  130: "#2E1559",
+  140: "#211040",
+  150: "#160B2B",
+  160: "#0B071A",
 };
 
 export const ploweredLight: Theme = {
   ...createLightTheme(ploweredBrand),
-  // Cloudflare-style neutral palette: pure white content area, warm
-  // light-grey chrome for sidebars and panels, light grey separators.
+  // Neutral palette: pure white content area, light-grey chrome for
+  // sidebars and panels, soft grey separators.
   colorNeutralBackground1: "#FFFFFF",
   colorNeutralBackground2: "#FAFAFA",
   colorNeutralBackground3: "#F5F5F5",

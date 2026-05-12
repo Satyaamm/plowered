@@ -9,6 +9,7 @@ import {
   Combobox,
   Dropdown,
   Field,
+  InfoLabel,
   Input,
   Option,
   Subtitle2,
@@ -113,7 +114,13 @@ export default function PoliciesPage() {
         <Card>
           <CardHeader header={<Subtitle2>Add a rule</Subtitle2>} />
           <div className={styles.form}>
-            <Field label="Effect">
+            <Field
+              label={
+                <InfoLabel info="allow grants the verbs to whoever matches the conditions; deny revokes them. Deny rules always win over allow rules when both match the same request.">
+                  Effect
+                </InfoLabel>
+              }
+            >
               <Dropdown
                 selectedOptions={[effect]}
                 value={effect}
@@ -126,7 +133,13 @@ export default function PoliciesPage() {
               </Dropdown>
             </Field>
 
-            <Field label="Verbs">
+            <Field
+              label={
+                <InfoLabel info="The actions this rule applies to. read = view metadata + lineage; edit = mutate; propose = suggest a change pending approval; certify = mark trusted; delete = soft-delete; run = trigger pipelines/checks; admin = manage policies and members.">
+                  Verbs
+                </InfoLabel>
+              }
+            >
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {ALL_VERBS.map((v) => (
                   <Checkbox
@@ -139,7 +152,13 @@ export default function PoliciesPage() {
               </div>
             </Field>
 
-            <Field label="Condition (optional)">
+            <Field
+              label={
+                <InfoLabel info="Restricts who or what the rule applies to. principal.role/group narrows by identity; resource.tag/owner narrows by target. Leave empty to apply to everyone in the workspace.">
+                  Condition (optional)
+                </InfoLabel>
+              }
+            >
               <Combobox
                 selectedOptions={[condType]}
                 value={condType}

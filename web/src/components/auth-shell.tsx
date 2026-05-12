@@ -73,7 +73,7 @@ export function AuthShell({
     <div className={styles.page}>
       <div className={styles.brand}>
         <span className={styles.brandDot} />
-        <span>plowered</span>
+        <span>PurpleCube AI Studio</span>
       </div>
       <div className={styles.card}>
         <div className={styles.head}>
@@ -83,7 +83,7 @@ export function AuthShell({
         {children}
       </div>
       <Caption1 className={styles.footer}>
-        © Plowered · open data context platform
+        © PurpleCube AI Studio · data context platform
       </Caption1>
     </div>
   );

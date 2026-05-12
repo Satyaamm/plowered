@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   Button,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -17,11 +18,33 @@ import { useCreatePipeline } from "@/lib/hooks";
 import { PageHeader } from "@/components/page-header";
 import { ErrorBanner } from "@/components/states";
 import { DAGEditor } from "@/components/dag-editor";
+import { CronPicker } from "@/components/cron-picker";
 import type { Task } from "@/lib/types-orchestration";
 
 const useStyles = makeStyles({
   body: { display: "flex", flexDirection: "column", gap: "20px" },
-  form: { display: "grid", gridTemplateColumns: "1fr 1fr 220px", gap: "16px" },
+  form: {
+    display: "grid",
+    gridTemplateColumns: "1fr 40px 1fr",
+    gap: "0px",
+    alignItems: "start",
+  },
+  divider: {
+    width: "1px",
+    backgroundColor: tokens.colorNeutralStroke2,
+    alignSelf: "stretch",
+    justifySelf: "center",
+  },
+  leftCol: { display: "flex", flexDirection: "column", gap: "16px" },
+  rightCol: { display: "flex", flexDirection: "column", gap: "12px" },
+  toggleRow: {
+    display: "flex",
+    gap: "32px",
+    alignItems: "center",
+    paddingTop: "16px",
+    marginTop: "4px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   panel: {
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
@@ -29,7 +52,7 @@ const useStyles = makeStyles({
     padding: "16px",
     display: "flex",
     flexDirection: "column",
-    gap: "12px",
+    gap: "16px",
   },
 });
 
@@ -41,12 +64,12 @@ export default function NewPipelinePage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [cron, setCron] = useState("");
+  const [timezone, setTimezone] = useState("UTC");
   const [enabled, setEnabled] = useState(true);
   const [failFast, setFailFast] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
 
   const hasCycle = (() => {
-    // Quick re-check before submit: BFS-style topo. Cheap.
     const indeg = new Map<string, number>();
     const out = new Map<string, string[]>();
     for (const t of tasks) {
@@ -75,8 +98,6 @@ export default function NewPipelinePage() {
     return removed !== tasks.length;
   })();
 
-  // Cron is a standard 5-field expression (minute hour day month weekday).
-  // We accept *, */N, comma lists and ranges in each slot.
   const CRON_RE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/;
   const cronTrim = cron.trim();
   const cronError =
@@ -95,7 +116,7 @@ export default function NewPipelinePage() {
       FailFast: failFast,
       Concurrency: 4,
       Tasks: tasks,
-      Schedule: cronTrim ? { Cron: cronTrim, Enabled: enabled, Timezone: "UTC" } : null,
+      Schedule: cronTrim ? { Cron: cronTrim, Enabled: enabled, Timezone: timezone } : null,
     });
     router.push(`/pipelines/${encodeURIComponent(created.ID)}`);
   };
@@ -103,8 +124,6 @@ export default function NewPipelinePage() {
   return (
     <>
       <PageHeader
-        title="New pipeline"
-        subtitle="Wire tasks into a DAG. Each task runs when its dependencies finish."
         crumbs={[
           { label: "Home", href: "/" },
           { label: "Pipelines", href: "/pipelines" },
@@ -127,48 +146,73 @@ export default function NewPipelinePage() {
       <div className={styles.body}>
         <div className={styles.panel}>
           <div className={styles.form}>
-            <Field label="Name" required>
-              <Input
-                value={name}
-                onChange={(_, d) => setName(d.value)}
-                placeholder="nightly-orders"
-                autoFocus
-              />
-            </Field>
-            <Field
-              label={enabled ? "Cron expression" : "Cron (optional)"}
-              required={enabled}
-              validationState={cronError ? "error" : "none"}
-              validationMessage={cronError || undefined}
-            >
-              <Input
-                value={cron}
-                onChange={(_, d) => setCron(d.value)}
-                placeholder="0 3 * * *"
-                style={{ fontFamily: "ui-monospace, monospace" }}
-              />
-            </Field>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, justifyContent: "center" }}>
-              <Switch
-                label="Schedule enabled"
-                checked={enabled}
-                onChange={(_, d) => setEnabled(d.checked)}
-              />
-              <Switch
-                label="Fail fast on first task failure"
-                checked={failFast}
-                onChange={(_, d) => setFailFast(d.checked)}
+            <div className={styles.leftCol} style={{ paddingRight: 20 }}>
+              <Field
+                required
+                label={
+                  <InfoLabel info="A human-readable identifier for this pipeline. Use kebab-case (e.g. 'nightly-orders'). Must be unique within the workspace; runs are listed under this name in the UI and logs.">
+                    Name
+                  </InfoLabel>
+                }
+              >
+                <Input
+                  value={name}
+                  onChange={(_, d) => setName(d.value)}
+                  placeholder="nightly-orders"
+                  autoFocus
+                />
+              </Field>
+              <Field
+                label={
+                  <InfoLabel info="Optional context shown on the pipeline detail page and in oncall alerts. Note what the pipeline does, who owns it, and who to ping when it fails.">
+                    Description
+                  </InfoLabel>
+                }
+              >
+                <Textarea
+                  rows={4}
+                  value={description}
+                  onChange={(_, d) => setDescription(d.value)}
+                  placeholder="What this pipeline does and who to ping when it fails."
+                />
+              </Field>
+            </div>
+
+            <div className={styles.divider} />
+
+            <div className={styles.rightCol} style={{ paddingLeft: 20 }}>
+              <CronPicker
+                value={{ cron, timezone }}
+                onChange={(v) => {
+                  setCron(v.cron);
+                  setTimezone(v.timezone);
+                }}
+                required={enabled}
+                error={cronError || undefined}
               />
             </div>
           </div>
-          <Field label="Description">
-            <Textarea
-              rows={2}
-              value={description}
-              onChange={(_, d) => setDescription(d.value)}
-              placeholder="What this pipeline does and who to ping when it fails."
+
+          <div className={styles.toggleRow}>
+            <Switch
+              checked={enabled}
+              onChange={(_, d) => setEnabled(d.checked)}
+              label={
+                <InfoLabel info="When enabled, the scheduler fires the pipeline on the cron schedule. Disable to pause without losing history; the pipeline can still be triggered manually or via API.">
+                  Schedule enabled
+                </InfoLabel>
+              }
             />
-          </Field>
+            <Switch
+              checked={failFast}
+              onChange={(_, d) => setFailFast(d.checked)}
+              label={
+                <InfoLabel info="When on, the first failing task aborts the run and downstream tasks are skipped. When off, independent branches keep going so partial completion is recorded.">
+                  Fail fast on first task failure
+                </InfoLabel>
+              }
+            />
+          </div>
         </div>
 
         {hasCycle && (

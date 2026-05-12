@@ -11,6 +11,7 @@ import {
   DrawerHeaderTitle,
   Dropdown,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -154,12 +155,26 @@ export function CheckDesigner({ open, onClose, existing, fixedAsset }: Props) {
       </DrawerHeader>
       <DrawerBody>
         <div className={styles.body}>
-          <Field label="Name" required>
+          <Field
+            label={
+              <InfoLabel info="Short identifier for this check — shown in run results, alerts, and the asset's quality panel. Pick something a stakeholder can read at a glance (e.g. 'orders rowcount > 0').">
+                Name
+              </InfoLabel>
+            }
+            required
+          >
             <Input value={name} onChange={(_, d) => setName(d.value)} placeholder="e.g. orders rowcount > 0" />
           </Field>
 
           {!fixedAsset && (
-            <Field label="Asset" required hint="Search by qualified name">
+            <Field
+              label={
+                <InfoLabel info="The catalog asset this check runs against. Search by qualified name (e.g. postgres.public.users). Only assets your role can read are returned.">
+                  Asset
+                </InfoLabel>
+              }
+              required
+            >
               <Combobox
                 value={assetQuery}
                 selectedOptions={assetId ? [assetId] : []}
@@ -180,7 +195,14 @@ export function CheckDesigner({ open, onClose, existing, fixedAsset }: Props) {
           )}
 
           <div className={styles.row}>
-            <Field label="Type" required>
+            <Field
+              label={
+                <InfoLabel info="Which expectation engine to apply. row_count = volume; not_null = nullability; freshness = recency vs. now; uniqueness = no duplicates; custom_sql = your own assertion query.">
+                  Type
+                </InfoLabel>
+              }
+              required
+            >
               <Dropdown
                 value={TYPES.find((t) => t.value === type)?.label ?? type}
                 selectedOptions={[type]}
@@ -196,7 +218,13 @@ export function CheckDesigner({ open, onClose, existing, fixedAsset }: Props) {
                 ))}
               </Dropdown>
             </Field>
-            <Field label="Severity">
+            <Field
+              label={
+                <InfoLabel info="info = visible in dashboards only. warning = posts to the asset and #data-quality channels. error = pages the asset owner. critical = pages on-call + locks downstream pipelines until resolved.">
+                  Severity
+                </InfoLabel>
+              }
+            >
               <Dropdown
                 value={severity}
                 selectedOptions={[severity]}

@@ -34,14 +34,14 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #F38020 0%, #FBC388 50%, #F38020 100%);
+  background: linear-gradient(90deg, #7C3AED 0%, #BFA4F8 50%, #7C3AED 100%);
   border-radius: 12px 12px 0 0;
 }
 
 /* ---------- Title ---------- */
 
 .driver-popover.plowered-tour .driver-popover-title {
-  color: #F38020;
+  color: #7C3AED;
   font-size: 17px;
   font-weight: 700;
   margin: 0 0 10px;
@@ -61,7 +61,7 @@
 /* ---------- Progress text ---------- */
 
 .driver-popover.plowered-tour .driver-popover-progress-text {
-  color: #F38020;
+  color: #7C3AED;
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -106,7 +106,7 @@
 }
 
 .driver-popover.plowered-tour .driver-popover-next-btn {
-  background: linear-gradient(180deg, #F38020 0%, #D86E18 100%);
+  background: linear-gradient(180deg, #7C3AED 0%, #6D28D9 100%);
   color: #FFFFFF;
   box-shadow: 0 2px 8px rgba(243, 128, 32, 0.35);
 }
@@ -169,7 +169,7 @@
 /* ---------- Spotlight halo on the active element ---------- */
 
 .driver-active-element {
-  outline: 2px solid #F38020 !important;
+  outline: 2px solid #7C3AED !important;
   outline-offset: 4px;
   border-radius: 6px;
   animation: plowered-tour-halo 1800ms ease-in-out infinite;
@@ -199,7 +199,7 @@
 .plowered-tour-bar-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #F38020, #FBC388, #F38020);
+  background: linear-gradient(90deg, #7C3AED, #BFA4F8, #7C3AED);
   background-size: 200% 100%;
   animation-name: plowered-tour-fill;
   animation-timing-function: linear;
@@ -226,5 +226,5 @@
   transition: color 120ms ease;
 }
 .plowered-tour-skip:hover {
-  color: #F38020;
+  color: #7C3AED;
 }

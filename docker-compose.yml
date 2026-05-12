@@ -195,7 +195,7 @@ services:
       # the compose network the API is reachable as `plowered:8080`.
       PLOWERED_API_BASE: http://plowered:8080
       NEXT_PUBLIC_PLOWERED_TOKEN: dev
-      NEXT_PUBLIC_APP_NAME: plowered
+      NEXT_PUBLIC_APP_NAME: PurpleCube AI Studio
     ports:
       - "${WEB_PORT:-3000}:3000"
     restart: unless-stopped

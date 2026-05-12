@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   Button,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -64,7 +65,14 @@ export default function ForgotPasswordPage() {
       subtitle="Tell us the email tied to your account and we'll send a reset link."
     >
       <form className={styles.form} onSubmit={submit} noValidate>
-        <Field label="Work email" required>
+        <Field
+          label={
+            <InfoLabel info="The address on your Plowered account. We always respond 'sent' regardless of whether the address exists — this prevents account enumeration. The link expires in 24 hours.">
+              Work email
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type="email"
             autoComplete="email"

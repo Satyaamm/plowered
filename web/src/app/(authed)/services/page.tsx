@@ -95,7 +95,7 @@ const useStyles = makeStyles({
     width: "36px",
     height: "36px",
     borderRadius: "4px",
-    backgroundColor: "#FEF4E8",
+    backgroundColor: "#F3EEFE",
     color: tokens.colorBrandForeground1,
     display: "flex",
     alignItems: "center",

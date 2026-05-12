@@ -8,6 +8,7 @@ import {
   Checkbox,
   Dropdown,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -239,7 +240,11 @@ export default function SignupPage() {
     >
       <form className={styles.form} onSubmit={onSubmit} noValidate>
         <Field
-          label="Workspace name"
+          label={
+            <InfoLabel info="The name of your company or team workspace. Shown across the product and in invite emails. Must be unique across Plowered; the URL slug is auto-derived (e.g. 'Acme Corp' becomes 'acme-corp').">
+              Workspace name
+            </InfoLabel>
+          }
           required
           validationState={showErr("workspace") ? "error" : "none"}
           validationMessage={showErr("workspace")}
@@ -287,7 +292,11 @@ export default function SignupPage() {
         </div>
 
         <Field
-          label="Work email"
+          label={
+            <InfoLabel info="Use your company address — Plowered defaults to inviting teammates from the same email domain. We email you a verification link; you'll need to click it before you can sign in.">
+              Work email
+            </InfoLabel>
+          }
           required
           validationState={showErr("email") ? "error" : "none"}
           validationMessage={showErr("email")}
@@ -360,9 +369,12 @@ export default function SignupPage() {
         </Field>
 
         <Field
-          label="Password"
+          label={
+            <InfoLabel info="Hashed with Argon2id (m=64MB, t=3, p=4) — never stored in plaintext. Must be 8+ chars and use 3 of: lowercase, uppercase, digit, symbol. Passwords found in haveibeenpwned breaches are rejected.">
+              Password
+            </InfoLabel>
+          }
           required
-          hint="8+ chars · 3 of: lowercase, uppercase, digit, symbol"
           validationState={showErr("password") ? "error" : "none"}
           validationMessage={showErr("password")}
         >

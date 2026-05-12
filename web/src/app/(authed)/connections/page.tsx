@@ -77,7 +77,7 @@ function healthBadge(h: Connection["health"]) {
     case "unreachable":
       return <Badge appearance="filled" color="danger">unreachable</Badge>;
     default:
-      return <Badge appearance="outline" color="subtle">unknown</Badge>;
+      return <Badge appearance="tint" color="subtle">unknown</Badge>;
   }
 }
 
@@ -250,7 +250,7 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "#FEF4E8",
+              background: "#F3EEFE",
               color: tokens.colorBrandForeground1,
               fontSize: 13,
             }}
@@ -263,7 +263,7 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "#FEF4E8",
+              background: "#F3EEFE",
               color: tokens.colorBrandForeground1,
               fontSize: 13,
             }}
@@ -278,7 +278,7 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "#FEF4E8",
+              background: "#F3EEFE",
               color: tokens.colorBrandForeground1,
               fontSize: 13,
             }}
@@ -292,7 +292,7 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "#FEF4E8",
+              background: "#F3EEFE",
               color: tokens.colorBrandForeground1,
               fontSize: 13,
             }}

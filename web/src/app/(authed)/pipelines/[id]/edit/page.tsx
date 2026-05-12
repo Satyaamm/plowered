@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Button,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -17,11 +18,33 @@ import { usePipeline, useUpdatePipeline } from "@/lib/hooks";
 import { PageHeader } from "@/components/page-header";
 import { DAGEditor } from "@/components/dag-editor";
 import { ErrorBanner, LoadingState } from "@/components/states";
+import { CronPicker } from "@/components/cron-picker";
 import type { Task } from "@/lib/types-orchestration";
 
 const useStyles = makeStyles({
   body: { display: "flex", flexDirection: "column", gap: "20px" },
-  form: { display: "grid", gridTemplateColumns: "1fr 1fr 220px", gap: "16px" },
+  form: {
+    display: "grid",
+    gridTemplateColumns: "1fr 40px 1fr",
+    gap: "0px",
+    alignItems: "start",
+  },
+  divider: {
+    width: "1px",
+    backgroundColor: tokens.colorNeutralStroke2,
+    alignSelf: "stretch",
+    justifySelf: "center",
+  },
+  leftCol: { display: "flex", flexDirection: "column", gap: "16px" },
+  rightCol: { display: "flex", flexDirection: "column", gap: "12px" },
+  toggleRow: {
+    display: "flex",
+    gap: "32px",
+    alignItems: "center",
+    paddingTop: "16px",
+    marginTop: "4px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   panel: {
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
@@ -29,7 +52,7 @@ const useStyles = makeStyles({
     padding: "16px",
     display: "flex",
     flexDirection: "column",
-    gap: "12px",
+    gap: "16px",
   },
 });
 
@@ -76,19 +99,18 @@ export default function EditPipelinePage({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [cron, setCron] = useState("");
+  const [timezone, setTimezone] = useState("UTC");
   const [enabled, setEnabled] = useState(true);
   const [failFast, setFailFast] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
 
-  // Load fields once the pipeline is fetched. Keep the local state
-  // canonical from then on so the user's edits don't get clobbered by
-  // background refetches.
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     if (pipeline && !hydrated) {
       setName(pipeline.Name ?? "");
       setDescription(pipeline.Description ?? "");
       setCron(pipeline.Schedule?.Cron ?? "");
+      setTimezone(pipeline.Schedule?.Timezone || "UTC");
       setEnabled(pipeline.Schedule?.Enabled ?? true);
       setFailFast(pipeline.FailFast ?? true);
       setTasks((pipeline.Tasks ?? []) as Task[]);
@@ -118,7 +140,7 @@ export default function EditPipelinePage({
       Description: description,
       FailFast: failFast,
       Tasks: tasks,
-      Schedule: cronTrim ? { Cron: cronTrim, Enabled: enabled, Timezone: "UTC" } : null,
+      Schedule: cronTrim ? { Cron: cronTrim, Enabled: enabled, Timezone: timezone } : null,
     });
     router.push(`/pipelines/${encodeURIComponent(id)}`);
   };
@@ -126,8 +148,6 @@ export default function EditPipelinePage({
   return (
     <>
       <PageHeader
-        title={`Edit ${pipeline.Name}`}
-        subtitle="Pipelines are versioned implicitly via updated_at — saving overwrites the active definition."
         crumbs={[
           { label: "Home", href: "/" },
           { label: "Pipelines", href: "/pipelines" },
@@ -151,42 +171,67 @@ export default function EditPipelinePage({
       <div className={styles.body}>
         <div className={styles.panel}>
           <div className={styles.form}>
-            <Field label="Name" required>
-              <Input value={name} onChange={(_, d) => setName(d.value)} />
-            </Field>
-            <Field
-              label={enabled ? "Cron expression" : "Cron (optional)"}
-              required={enabled}
-              validationState={cronError ? "error" : "none"}
-              validationMessage={cronError || undefined}
-            >
-              <Input
-                value={cron}
-                onChange={(_, d) => setCron(d.value)}
-                placeholder="0 3 * * *"
-                style={{ fontFamily: "ui-monospace, monospace" }}
-              />
-            </Field>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, justifyContent: "center" }}>
-              <Switch
-                label="Schedule enabled"
-                checked={enabled}
-                onChange={(_, d) => setEnabled(d.checked)}
-              />
-              <Switch
-                label="Fail fast"
-                checked={failFast}
-                onChange={(_, d) => setFailFast(d.checked)}
+            <div className={styles.leftCol} style={{ paddingRight: 20 }}>
+              <Field
+                required
+                label={
+                  <InfoLabel info="A human-readable identifier for this pipeline. Use kebab-case (e.g. 'nightly-orders'). Must be unique within the workspace; runs are listed under this name in the UI and logs.">
+                    Name
+                  </InfoLabel>
+                }
+              >
+                <Input value={name} onChange={(_, d) => setName(d.value)} />
+              </Field>
+              <Field
+                label={
+                  <InfoLabel info="Optional context shown on the pipeline detail page and in oncall alerts. Note what the pipeline does, who owns it, and who to ping when it fails.">
+                    Description
+                  </InfoLabel>
+                }
+              >
+                <Textarea
+                  rows={4}
+                  value={description}
+                  onChange={(_, d) => setDescription(d.value)}
+                />
+              </Field>
+            </div>
+
+            <div className={styles.divider} />
+
+            <div className={styles.rightCol} style={{ paddingLeft: 20 }}>
+              <CronPicker
+                value={{ cron, timezone }}
+                onChange={(v) => {
+                  setCron(v.cron);
+                  setTimezone(v.timezone);
+                }}
+                required={enabled}
+                error={cronError || undefined}
               />
             </div>
           </div>
-          <Field label="Description">
-            <Textarea
-              rows={2}
-              value={description}
-              onChange={(_, d) => setDescription(d.value)}
+
+          <div className={styles.toggleRow}>
+            <Switch
+              checked={enabled}
+              onChange={(_, d) => setEnabled(d.checked)}
+              label={
+                <InfoLabel info="When enabled, the scheduler fires the pipeline on the cron schedule. Disable to pause without losing history; the pipeline can still be triggered manually or via API.">
+                  Schedule enabled
+                </InfoLabel>
+              }
             />
-          </Field>
+            <Switch
+              checked={failFast}
+              onChange={(_, d) => setFailFast(d.checked)}
+              label={
+                <InfoLabel info="When on, the first failing task aborts the run and downstream tasks are skipped. When off, independent branches keep going so partial completion is recorded.">
+                  Fail fast on first task failure
+                </InfoLabel>
+              }
+            />
+          </div>
         </div>
 
         {cycle && (

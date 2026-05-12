@@ -73,7 +73,7 @@ export function PipelineDAG({ tasks }: { tasks: Task[] }) {
       data: { label: `${t.ID}\n${t.Type}` },
       style: {
         background: "#FAFAFA",
-        border: "1px solid #F38020",
+        border: "1px solid #7C3AED",
         borderRadius: 6,
         padding: "10px 14px",
         fontSize: 12,
@@ -89,7 +89,7 @@ export function PipelineDAG({ tasks }: { tasks: Task[] }) {
         source: src,
         target: t.ID,
         animated: false,
-        style: { stroke: "#F38020" },
+        style: { stroke: "#7C3AED" },
       })),
     );
     return { nodes, edges };

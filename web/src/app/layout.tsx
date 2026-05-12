@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 
-const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "plowered";
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "PurpleCube AI Studio";
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: "Data context platform — catalog, governance, and AI-native lineage.",
+  description: "PurpleCube AI Studio — data context platform for catalog, governance, and AI-native lineage.",
 };
 
 // The root layout is intentionally minimal: only providers + body. The

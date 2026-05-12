@@ -11,6 +11,7 @@ import {
   DrawerHeaderTitle,
   Dropdown,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -83,7 +84,7 @@ const useStyles = makeStyles({
   },
   pickActive: {
     boxShadow: `0 0 0 2px ${tokens.colorBrandBackground}, 0 4px 12px rgba(243,128,32,0.12)`,
-    backgroundColor: "#FEF4E8",
+    backgroundColor: "#F3EEFE",
   },
   pickIcon: {
     width: "28px",
@@ -328,7 +329,14 @@ export function ConnectionWizard({
 
           <div className={styles.section}>
             <Title3>Connection details</Title3>
-            <Field label="Display name" required hint="What this datasource is called inside Plowered.">
+            <Field
+              label={
+                <InfoLabel info="A human-readable name for this datasource inside Plowered. Shown in connection lists, lineage graphs, and audit events. Pick something a teammate can recognise at a glance.">
+                  Display name
+                </InfoLabel>
+              }
+              required
+            >
               <Input
                 value={name}
                 onChange={(_, d) => dirty(setName)(d.value)}
@@ -339,14 +347,28 @@ export function ConnectionWizard({
             {type === "postgres" && (
               <>
                 <div className={styles.rowGrid}>
-                  <Field label="Host" required>
+                  <Field
+                    label={
+                      <InfoLabel info="Hostname or IP of the Postgres server reachable from the Plowered workers. For managed databases, this is the endpoint shown in your cloud console.">
+                        Host
+                      </InfoLabel>
+                    }
+                    required
+                  >
                     <Input
                       value={host}
                       onChange={(_, d) => dirty(setHost)(d.value)}
                       placeholder="db.example.com"
                     />
                   </Field>
-                  <Field label="Port" required>
+                  <Field
+                    label={
+                      <InfoLabel info="TCP port the Postgres server listens on. Defaults to 5432.">
+                        Port
+                      </InfoLabel>
+                    }
+                    required
+                  >
                     <Input
                       value={port}
                       onChange={(_, d) => dirty(setPort)(d.value)}
@@ -354,14 +376,28 @@ export function ConnectionWizard({
                     />
                   </Field>
                 </div>
-                <Field label="Database" required>
+                <Field
+                  label={
+                    <InfoLabel info="The specific database (catalog) to crawl. Plowered enumerates schemas, tables, and columns within this database only.">
+                      Database
+                    </InfoLabel>
+                  }
+                  required
+                >
                   <Input
                     value={database}
                     onChange={(_, d) => dirty(setDatabase)(d.value)}
                     placeholder="warehouse"
                   />
                 </Field>
-                <Field label="Username" required>
+                <Field
+                  label={
+                    <InfoLabel info="Role used by Plowered to read metadata, sample rows, and run quality checks. Read-only is sufficient; we recommend a dedicated 'plowered' role with SELECT and USAGE only.">
+                      Username
+                    </InfoLabel>
+                  }
+                  required
+                >
                   <Input
                     value={user}
                     onChange={(_, d) => dirty(setUser)(d.value)}
@@ -369,9 +405,12 @@ export function ConnectionWizard({
                   />
                 </Field>
                 <Field
-                  label="Password"
+                  label={
+                    <InfoLabel info="Encrypted at rest with AES-256-GCM and decrypted in-memory only on the worker. Plowered never logs or returns this value through the API.">
+                      Password
+                    </InfoLabel>
+                  }
                   required
-                  hint="Encrypted with AES-256-GCM. Plowered never logs or returns this value."
                 >
                   <Input
                     type="password"
@@ -379,7 +418,13 @@ export function ConnectionWizard({
                     onChange={(_, d) => dirty(setPassword)(d.value)}
                   />
                 </Field>
-                <Field label="SSL mode">
+                <Field
+                  label={
+                    <InfoLabel info="TLS strictness for the Postgres connection. 'require' enforces TLS without cert verification; 'verify-full' is the strongest. Pick 'disable' only for localhost dev.">
+                      SSL mode
+                    </InfoLabel>
+                  }
+                >
                   <Dropdown
                     value={sslmode}
                     selectedOptions={[sslmode]}
@@ -396,9 +441,12 @@ export function ConnectionWizard({
             {type === "snowflake" && (
               <>
                 <Field
-                  label="Account"
+                  label={
+                    <InfoLabel info="Snowflake account locator in the form <orgname>-<account> or <account>.<region>.<cloud>. Example: xy12345.us-east-1. Find it in the URL of your Snowflake console.">
+                      Account
+                    </InfoLabel>
+                  }
                   required
-                  hint="Snowflake locator: <orgname>-<account>, e.g. xy12345.us-east-1."
                 >
                   <Input
                     value={sfAccount}
@@ -406,7 +454,14 @@ export function ConnectionWizard({
                     placeholder="xy12345.us-east-1"
                   />
                 </Field>
-                <Field label="Username" required>
+                <Field
+                  label={
+                    <InfoLabel info="Snowflake user that Plowered authenticates as. Recommend a dedicated PLOWERED user granted USAGE on warehouse + read access to the target schemas.">
+                      Username
+                    </InfoLabel>
+                  }
+                  required
+                >
                   <Input
                     value={user}
                     onChange={(_, d) => dirty(setUser)(d.value)}
@@ -414,9 +469,12 @@ export function ConnectionWizard({
                   />
                 </Field>
                 <Field
-                  label="Password"
+                  label={
+                    <InfoLabel info="Encrypted at rest with AES-256-GCM. For SSO/OAuth or key-pair auth, contact us — coming soon.">
+                      Password
+                    </InfoLabel>
+                  }
                   required
-                  hint="Encrypted at rest. For SSO/OAuth, contact us — coming soon."
                 >
                   <Input
                     type="password"
@@ -425,14 +483,26 @@ export function ConnectionWizard({
                   />
                 </Field>
                 <div className={styles.rowGrid}>
-                  <Field label="Warehouse" hint="Compute warehouse for crawls + samples.">
+                  <Field
+                    label={
+                      <InfoLabel info="Compute warehouse used for crawls, samples, and quality checks. Pick a small or X-small warehouse — PurpleCube's workload is metadata-heavy, not compute-heavy.">
+                        Warehouse
+                      </InfoLabel>
+                    }
+                  >
                     <Input
                       value={sfWarehouse}
                       onChange={(_, d) => dirty(setSfWarehouse)(d.value)}
                       placeholder="ANALYTICS_WH"
                     />
                   </Field>
-                  <Field label="Role">
+                  <Field
+                    label={
+                      <InfoLabel info="Snowflake role activated for this connection. Determines which databases and schemas the crawler can see. Defaults to the user's default role.">
+                        Role
+                      </InfoLabel>
+                    }
+                  >
                     <Input
                       value={sfRole}
                       onChange={(_, d) => dirty(setSfRole)(d.value)}
@@ -441,14 +511,26 @@ export function ConnectionWizard({
                   </Field>
                 </div>
                 <div className={styles.rowGrid}>
-                  <Field label="Database" hint="Optional; scopes the crawl.">
+                  <Field
+                    label={
+                      <InfoLabel info="Optional. Scopes the crawl to this database. Leave empty to crawl every database the role can read.">
+                        Database
+                      </InfoLabel>
+                    }
+                  >
                     <Input
                       value={database}
                       onChange={(_, d) => dirty(setDatabase)(d.value)}
                       placeholder="RAW"
                     />
                   </Field>
-                  <Field label="Schema" hint="Optional; further scopes the crawl.">
+                  <Field
+                    label={
+                      <InfoLabel info="Optional. Further scopes the crawl to this schema within the database above. Leave empty for all schemas.">
+                        Schema
+                      </InfoLabel>
+                    }
+                  >
                     <Input
                       value={sfSchema}
                       onChange={(_, d) => dirty(setSfSchema)(d.value)}
@@ -462,9 +544,12 @@ export function ConnectionWizard({
             {type === "bigquery" && (
               <>
                 <Field
-                  label="Project ID"
+                  label={
+                    <InfoLabel info="The GCP project that owns the datasets you want catalogued. PurpleCube's service account needs roles/bigquery.metadataViewer and roles/bigquery.dataViewer on this project.">
+                      Project ID
+                    </InfoLabel>
+                  }
                   required
-                  hint="The GCP project that owns the datasets you want catalogued."
                 >
                   <Input
                     value={bqProjectID}
@@ -473,14 +558,26 @@ export function ConnectionWizard({
                   />
                 </Field>
                 <div className={styles.rowGrid}>
-                  <Field label="Dataset" hint="Optional; scopes the crawl.">
+                  <Field
+                    label={
+                      <InfoLabel info="Optional. Scopes the crawl to this dataset. Leave empty to crawl every dataset visible to the service account.">
+                        Dataset
+                      </InfoLabel>
+                    }
+                  >
                     <Input
                       value={bqDataset}
                       onChange={(_, d) => dirty(setBqDataset)(d.value)}
                       placeholder="analytics"
                     />
                   </Field>
-                  <Field label="Location">
+                  <Field
+                    label={
+                      <InfoLabel info="BigQuery dataset region (e.g. US, EU, asia-northeast1). Datasets in other regions are skipped — keep one location per connection.">
+                        Location
+                      </InfoLabel>
+                    }
+                  >
                     <Input
                       value={bqLocation}
                       onChange={(_, d) => dirty(setBqLocation)(d.value)}
@@ -488,7 +585,13 @@ export function ConnectionWizard({
                     />
                   </Field>
                 </div>
-                <Field label="Auth method">
+                <Field
+                  label={
+                    <InfoLabel info="Service account JSON: paste a key with bigquery.metadataViewer + dataViewer. Workload identity: bind PurpleCube's GKE/Cloud Run SA to a GCP service account (no key material stored).">
+                      Auth method
+                    </InfoLabel>
+                  }
+                >
                   <Dropdown
                     value={bqAuthMethod === "service_account" ? "Service account JSON" : "Workload identity"}
                     selectedOptions={[bqAuthMethod]}
@@ -500,9 +603,12 @@ export function ConnectionWizard({
                 </Field>
                 {bqAuthMethod === "service_account" && (
                   <Field
-                    label="Service account JSON"
+                    label={
+                      <InfoLabel info="Paste the entire service-account JSON key including the private_key field. Encrypted at rest with AES-256-GCM; only the worker decrypts it in memory.">
+                        Service account JSON
+                      </InfoLabel>
+                    }
                     required
-                    hint="Paste the entire JSON key. Encrypted at rest; only the worker can read it."
                   >
                     <Input
                       type="password"

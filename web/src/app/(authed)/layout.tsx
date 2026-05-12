@@ -3,7 +3,7 @@ import { Topbar } from "@/components/topbar";
 import { RequireAuth } from "@/components/require-auth";
 import { ProductTour } from "@/components/product-tour";
 
-const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "plowered";
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "PurpleCube AI Studio";
 
 // Authed shell: left rail + top bar + main content. RequireAuth blocks
 // the children until /v1/auth/me returns a verified user; on 401 the

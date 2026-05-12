@@ -98,15 +98,15 @@ export default function AssetPage({
       />
 
       <div className={styles.pillRow} style={{ marginBottom: 16 }}>
-        <Badge appearance="outline" color="brand">{a.type}</Badge>
+        <Badge appearance="tint" color="brand">{a.type}</Badge>
         <Badge
-          appearance="outline"
+          appearance="tint"
           color={
             a.trust === "certified"
               ? "success"
               : a.trust === "deprecated"
                 ? "danger"
-                : "subtle"
+                : "warning"
           }
         >
           trust: {a.trust ?? "unverified"}

@@ -37,7 +37,7 @@ function outcomeBadge(o?: string) {
     case "pass":  return <Badge appearance="filled" color="success">passing</Badge>;
     case "fail":  return <Badge appearance="filled" color="danger">failing</Badge>;
     case "error": return <Badge appearance="filled" color="warning">error</Badge>;
-    default:      return <Badge appearance="outline" color="subtle">no runs yet</Badge>;
+    default:      return <Badge appearance="tint" color="subtle">no runs yet</Badge>;
   }
 }
 

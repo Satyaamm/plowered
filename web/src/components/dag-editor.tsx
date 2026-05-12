@@ -22,15 +22,17 @@ import {
   Body1,
   Button,
   Caption1,
-  InlineDrawer,
+  Drawer,
   DrawerBody,
   DrawerHeader,
   DrawerHeaderTitle,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
   Subtitle2,
+  Switch,
   Textarea,
   makeStyles,
   tokens,
@@ -172,7 +174,7 @@ function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
       },
       style: {
         background: onCycle ? "#FFE9E5" : "#FAFAFA",
-        border: `1.5px solid ${onCycle ? "#C03B2C" : "#F38020"}`,
+        border: `1.5px solid ${onCycle ? "#C03B2C" : "#7C3AED"}`,
         borderRadius: 6,
         padding: "10px 14px",
         width: 200,
@@ -185,7 +187,7 @@ function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
       id: `${src}->${t.ID}`,
       source: src,
       target: t.ID,
-      style: { stroke: "#F38020", strokeWidth: 1.5 },
+      style: { stroke: "#7C3AED", strokeWidth: 1.5 },
       type: "smoothstep",
     })),
   );
@@ -229,7 +231,7 @@ const useStyles = makeStyles({
     border: "none",
     textAlign: "left",
     color: tokens.colorNeutralForeground1,
-    ":hover": { backgroundColor: "#FEF4E8" },
+    ":hover": { backgroundColor: "#F3EEFE" },
   },
   canvas: {
     backgroundColor: tokens.colorNeutralBackground1,
@@ -269,6 +271,10 @@ export interface DAGEditorProps {
 export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
   const styles = useStyles();
   const [selectedID, setSelectedID] = useState<string | null>(null);
+  // Config mode is off by default — clicking a node selects it but
+  // doesn't open the config drawer, so the user can drag and arrange
+  // freely. Flip it on to edit task config.
+  const [configMode, setConfigMode] = useState(false);
 
   const cycleNodes = useMemo(() => detectCycle(tasks), [tasks]);
   const flow = useMemo(() => tasksToFlow(tasks, cycleNodes), [tasks, cycleNodes]);
@@ -400,9 +406,7 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
 
       <div
         className={styles.shell}
-        style={{
-          gridTemplateColumns: selected ? "220px 1fr 420px" : "220px 1fr",
-        }}
+        style={{ gridTemplateColumns: "220px 1fr" }}
       >
         <aside className={styles.palette}>
           <Subtitle2>Task palette</Subtitle2>
@@ -416,7 +420,7 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
               className={styles.paletteItem}
               onClick={() => addTask(p.type)}
             >
-              <span style={{ color: "#F38020" }}>{p.icon}</span>
+              <span style={{ color: "#7C3AED" }}>{p.icon}</span>
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{p.label}</div>
                 <div style={{ fontSize: 11, color: "#7A6A55" }}>{p.desc}</div>
@@ -436,8 +440,20 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
               </Badge>
             )}
             <div style={{ flex: 1 }} />
+            <Switch
+              checked={configMode}
+              onChange={(_, d) => {
+                setConfigMode(d.checked);
+                if (!d.checked) setSelectedID(null);
+              }}
+              label={
+                <InfoLabel info="Off: nodes drag freely; clicks just select. On: clicking a node opens its config drawer (canvas dragging is paused while the drawer is open).">
+                  Config mode
+                </InfoLabel>
+              }
+            />
             <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
-              Drag from a node's right edge to wire a dependency. Click a node to edit it.
+              Drag from a node's right edge to wire a dependency.
             </Caption1>
           </div>
           <div style={{ height: 510 }}>
@@ -448,7 +464,9 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
-                onNodeClick={(_, n) => setSelectedID(n.id)}
+                onNodeClick={(_, n) => {
+                  if (configMode) setSelectedID(n.id);
+                }}
                 fitView
                 fitViewOptions={{ maxZoom: 1, padding: 0.3 }}
                 minZoom={0.2}
@@ -464,10 +482,20 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
           </div>
         </div>
 
-        {/* Task settings drawer — inline (not overlay) so it occupies
-            its own grid column and the canvas stays interactive while
-            you edit a node. Same pattern n8n and Dagster use. */}
-        <InlineDrawer open={!!selected} position="end" separator className={styles.drawer}>
+        {/* Task settings drawer — overlay, slides in from the right.
+            Only opens while Config mode is on; when the toggle is off
+            the canvas stays drag-friendly and clicks do nothing. */}
+        <Drawer
+          type="overlay"
+          open={configMode && !!selected}
+          onOpenChange={(_, d) => {
+            if (!d.open) setSelectedID(null);
+          }}
+          position="end"
+          separator
+          size="medium"
+          className={styles.drawer}
+        >
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
@@ -556,7 +584,7 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
             </div>
           </DrawerBody>
         )}
-        </InlineDrawer>
+        </Drawer>
       </div>
     </div>
   );

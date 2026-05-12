@@ -147,7 +147,7 @@ export default function CheckDetailPage() {
                 <Line
                   type="monotone"
                   dataKey="value"
-                  stroke="#F38020"
+                  stroke="#7C3AED"
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}

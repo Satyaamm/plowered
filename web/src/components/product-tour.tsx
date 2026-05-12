@@ -36,9 +36,9 @@ const STEPS: Step[] = [
   // ---- Intro on Home ----
   {
     route: "/",
-    title: "Welcome to Plowered",
+    title: "Welcome to PurpleCube AI Studio",
     description:
-      "Plowered is the data context platform for modern data teams. " +
+      "PurpleCube AI Studio is the data context platform for modern data teams. " +
       "It catalogs every dataset, runs quality checks, orchestrates pipelines, tracks " +
       "lineage, and surfaces all of it to humans and AI agents through one API. This guided demo will " +
       "walk you through every page so you know exactly where to look for what. Each step auto-advances " +
@@ -200,7 +200,7 @@ const STEPS: Step[] = [
     route: "/settings/ai",
     title: "AI providers — bring your own model",
     description:
-      "Plowered is BYOM — connect Anthropic, OpenAI, DeepSeek, or any OpenAI-compatible endpoint " +
+      "PurpleCube is BYOM — connect Anthropic, OpenAI, DeepSeek, or any OpenAI-compatible endpoint " +
       "with your own API key. Used for semantic search embeddings, glossary auto-write, and the " +
       "ClassifierAgent. The Test button validates the key with a tokenless probe before saving.",
   },
@@ -247,6 +247,11 @@ export function ProductTour() {
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stepIndex = useRef(0);
   const completedRef = useRef(false);
+  // Guard against auto-launching twice within a single mounted session
+  // (StrictMode double-effects, route changes) — the *persistent* gate
+  // is the tour_completed_at column on the user row, set the moment
+  // the tour first auto-fires so a refresh mid-tour never reopens it.
+  const autoLaunchedRef = useRef(false);
 
   useEffect(() => {
     const clearAdvance = () => {
@@ -276,20 +281,24 @@ export function ProductTour() {
       }, AUTO_ADVANCE_MS);
     };
 
-    const decoratePopover = () => {
+    // Driver.js mounts/un-mounts .driver-popover lazily and on every
+    // step the inner DOM is re-rendered. We retry briefly until the
+    // popover is in the DOM, then attach our extras.
+    const decoratePopover = (attempt = 0) => {
       const popover = document.querySelector<HTMLElement>(".driver-popover");
-      if (!popover) return;
+      if (!popover) {
+        if (attempt < 30) setTimeout(() => decoratePopover(attempt + 1), 50);
+        return;
+      }
 
-      // Floating progress bar pinned to the bottom edge of the popover.
-      // The CSS keyframe fills 0 → 100% over AUTO_ADVANCE_MS so the
-      // visual stays in lock-step with the timer.
-      if (!popover.querySelector(".plowered-tour-bar")) {
-        const bar = document.createElement("div");
+      // ---- Progress bar ----
+      let bar = popover.querySelector<HTMLElement>(".plowered-tour-bar");
+      if (!bar) {
+        bar = document.createElement("div");
         bar.className = "plowered-tour-bar";
         bar.innerHTML = '<div class="plowered-tour-bar-fill"></div>';
         popover.appendChild(bar);
       }
-      // Force the fill animation to restart on each step.
       const fill = popover.querySelector<HTMLElement>(".plowered-tour-bar-fill");
       if (fill) {
         fill.style.animation = "none";
@@ -297,26 +306,52 @@ export function ProductTour() {
         fill.style.animation = `plowered-tour-fill ${AUTO_ADVANCE_MS}ms linear forwards`;
       }
 
-      // Skip-tour button in the footer (left side).
-      const footer = popover.querySelector(".driver-popover-footer");
+      // ---- Skip tour button ----
+      // Driver.js v1.3 emits `.driver-popover-footer` containing the
+      // progress text + `.driver-popover-navigation-btns`. We inject
+      // our Skip into the footer; on each step the footer is wiped
+      // and recreated so we re-inject every time.
+      const footer = popover.querySelector<HTMLElement>(".driver-popover-footer");
       if (footer && !footer.querySelector(".plowered-tour-skip")) {
         const skip = document.createElement("button");
         skip.className = "plowered-tour-skip";
         skip.type = "button";
         skip.textContent = "Skip tour";
-        skip.addEventListener("click", finish);
+        skip.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          finish();
+        });
         footer.insertBefore(skip, footer.firstChild);
       }
 
-      // Pause on hover.
-      popover.addEventListener("mouseenter", () => {
-        clearAdvance();
-        if (fill) fill.style.animationPlayState = "paused";
-      });
-      popover.addEventListener("mouseleave", () => {
-        if (fill) fill.style.animationPlayState = "running";
-        armAdvance();
-      });
+      // ---- Close (X) button — bind a direct click as a belt-and-
+      // braces in case driver.js's onCloseClick doesn't fire on every
+      // build of the lib. ----
+      const closeBtn = popover.querySelector<HTMLElement>(".driver-popover-close-btn");
+      if (closeBtn && !closeBtn.dataset.ploweredBound) {
+        closeBtn.dataset.ploweredBound = "1";
+        closeBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          finish();
+        });
+      }
+
+      // ---- Pause on hover ----
+      if (!popover.dataset.ploweredHoverBound) {
+        popover.dataset.ploweredHoverBound = "1";
+        popover.addEventListener("mouseenter", () => {
+          clearAdvance();
+          const f = popover.querySelector<HTMLElement>(".plowered-tour-bar-fill");
+          if (f) f.style.animationPlayState = "paused";
+        });
+        popover.addEventListener("mouseleave", () => {
+          const f = popover.querySelector<HTMLElement>(".plowered-tour-bar-fill");
+          if (f) f.style.animationPlayState = "running";
+          armAdvance();
+        });
+      }
     };
 
     const showStep = (i: number) => {
@@ -398,18 +433,27 @@ export function ProductTour() {
     };
   }, [completeTour, router]);
 
-  // Auto-launch on first authenticated load when the user hasn't
-  // dismissed it yet. Only fire on home so the first highlight lands
-  // on a predictable layout.
+  // Auto-launch on first authenticated load only. We stamp
+  // tour_completed_at IMMEDIATELY on auto-launch — that way closing
+  // the browser, refreshing, or skipping mid-tour all leave the same
+  // persistent "seen" state, and the next login never re-opens it.
+  // Re-running the tour from the profile menu uses
+  // window.__plowered_tour() which bypasses this check.
   useEffect(() => {
     if (!authenticated || !principal) return;
     if (principal.tourCompleted) return;
     if (pathname !== "/") return;
+    if (autoLaunchedRef.current) return;
+    autoLaunchedRef.current = true;
     const t = setTimeout(() => {
+      // Mark the row up front. This is the durable one-time gate.
+      completedRef.current = true;
+      completeTour.mutate();
       stepIndex.current = 0;
       window.__plowered_tour?.();
     }, 900);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated, principal, pathname]);
 
   return null;

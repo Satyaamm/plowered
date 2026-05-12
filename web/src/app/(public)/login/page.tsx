@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import {
   Button,
   Field,
+  InfoLabel,
   Input,
   MessageBar,
   MessageBarBody,
@@ -76,7 +77,14 @@ function LoginInner() {
       subtitle="Welcome back to your data context platform."
     >
       <form className={styles.form} onSubmit={onSubmit}>
-        <Field label="Work email" required>
+        <Field
+          label={
+            <InfoLabel info="The address you signed up with. If you joined via invitation, this is whichever email the invite was sent to.">
+              Work email
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type="email"
             autoComplete="email"
@@ -86,7 +94,14 @@ function LoginInner() {
             disabled={login.isPending}
           />
         </Field>
-        <Field label="Password" required>
+        <Field
+          label={
+            <InfoLabel info="After 5 wrong attempts the account is rate-limited for 15 minutes. Forgot it? Use 'Forgot password' below — you'll get a one-time reset link.">
+              Password
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type={showPw ? "text" : "password"}
             autoComplete="current-password"
@@ -115,7 +130,7 @@ function LoginInner() {
                   {" "}
                   <a
                     role="button"
-                    style={{ color: "#F38020", cursor: "pointer", fontWeight: 600 }}
+                    style={{ color: "#7C3AED", cursor: "pointer", fontWeight: 600 }}
                     onClick={async () => {
                       await resend.mutateAsync(email);
                     }}
@@ -143,7 +158,7 @@ function LoginInner() {
             Forgot password?
           </Link>
           <span>
-            New to Plowered?{" "}
+            New to PurpleCube?{" "}
             <Link href="/signup" className={styles.link}>
               Create a workspace
             </Link>

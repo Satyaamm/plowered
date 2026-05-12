@@ -162,7 +162,7 @@ const useStyles = makeStyles({
     // Pale orange tint (brand step 10) — colorBrandBackground2 in
     // Fluent's light theme maps to brand[160] (near-black), so we
     // hardcode the tint we actually want here and below.
-    backgroundColor: "#FEF4E8",
+    backgroundColor: "#F3EEFE",
     color: tokens.colorBrandForeground1,
     borderLeft: `3px solid ${tokens.colorBrandBackground}`,
     paddingLeft: "13px",
