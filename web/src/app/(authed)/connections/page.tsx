@@ -252,8 +252,8 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: tokens.colorBrandBackground2,
-              color: tokens.colorBrandForeground2,
+              background: "#FEF4E8",
+              color: tokens.colorBrandForeground1,
               fontSize: 13,
             }}
           >
@@ -265,8 +265,8 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: tokens.colorBrandBackground2,
-              color: tokens.colorBrandForeground2,
+              background: "#FEF4E8",
+              color: tokens.colorBrandForeground1,
               fontSize: 13,
             }}
           >
@@ -280,8 +280,8 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: tokens.colorBrandBackground2,
-              color: tokens.colorBrandForeground2,
+              background: "#FEF4E8",
+              color: tokens.colorBrandForeground1,
               fontSize: 13,
             }}
           >
@@ -294,8 +294,8 @@ export default function ConnectionsPage() {
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: tokens.colorBrandBackground2,
-              color: tokens.colorBrandForeground2,
+              background: "#FEF4E8",
+              color: tokens.colorBrandForeground1,
               fontSize: 13,
             }}
           >
@@ -322,7 +322,7 @@ export default function ConnectionsPage() {
           </div>
         )}
         {classify.isPending && (
-          <div style={{ padding: "10px 12px", fontSize: 13, color: tokens.colorBrandForeground2 }}>
+          <div style={{ padding: "10px 12px", fontSize: 13, color: tokens.colorBrandForeground1 }}>
             Queueing classification…
           </div>
         )}

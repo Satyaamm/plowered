@@ -220,7 +220,7 @@ const useStyles = makeStyles({
     border: "none",
     textAlign: "left",
     color: tokens.colorNeutralForeground1,
-    ":hover": { backgroundColor: tokens.colorBrandBackground2 },
+    ":hover": { backgroundColor: "#FEF4E8" },
   },
   canvas: {
     backgroundColor: tokens.colorNeutralBackground1,

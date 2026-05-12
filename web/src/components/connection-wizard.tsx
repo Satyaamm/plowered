@@ -56,29 +56,50 @@ const useStyles = makeStyles({
   },
   picker: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-    gap: "8px",
+    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+    gap: "10px",
   },
   pickCard: {
-    padding: "12px",
-    borderRadius: "6px",
+    position: "relative",
+    padding: "14px 14px 12px",
+    borderRadius: "8px",
     cursor: "pointer",
-    backgroundColor: tokens.colorNeutralBackground2,
-    boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+    boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke1}`,
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    gap: "8px",
     border: "none",
     textAlign: "left",
     color: tokens.colorNeutralForeground1,
+    transitionProperty: "box-shadow, transform, background-color",
+    transitionDuration: "120ms",
+    transitionTimingFunction: "ease",
     ":hover:not(:disabled)": {
-      boxShadow: `0 0 0 1px ${tokens.colorBrandStroke2}`,
+      boxShadow: `0 0 0 1px ${tokens.colorBrandStroke1}, 0 2px 6px rgba(0,0,0,0.04)`,
+      transform: "translateY(-1px)",
     },
-    ":disabled": { opacity: 0.5, cursor: "not-allowed" },
+    ":disabled": { opacity: 0.55, cursor: "not-allowed" },
   },
   pickActive: {
-    boxShadow: `0 0 0 2px ${tokens.colorBrandStroke1}`,
-    backgroundColor: tokens.colorBrandBackground2,
+    boxShadow: `0 0 0 2px ${tokens.colorBrandBackground}, 0 4px 12px rgba(243,128,32,0.12)`,
+    backgroundColor: "#FEF4E8",
+  },
+  pickIcon: {
+    width: "28px",
+    height: "28px",
+    color: tokens.colorBrandForeground1,
+  },
+  pickLabel: {
+    fontWeight: 600,
+    fontSize: "13px",
+    color: tokens.colorNeutralForeground1,
+  },
+  pickCheck: {
+    position: "absolute",
+    top: "8px",
+    right: "8px",
+    color: tokens.colorBrandBackground,
   },
   testRow: {
     display: "flex",
@@ -281,23 +302,27 @@ export function ConnectionWizard({
           <div className={styles.section}>
             <Title3>Source type</Title3>
             <div className={styles.picker}>
-              {TYPES.map((t) => (
-                <button
-                  key={t.value}
-                  type="button"
-                  className={`${styles.pickCard} ${
-                    type === t.value ? styles.pickActive : ""
-                  }`}
-                  disabled={!!t.disabled}
-                  onClick={() => {
-                    setType(t.value);
-                    setTestStatus("idle");
-                  }}
-                >
-                  <Database24Filled style={{ color: tokens.colorBrandForeground1 }} />
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{t.label}</span>
-                </button>
-              ))}
+              {TYPES.map((t) => {
+                const selected = type === t.value;
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    className={`${styles.pickCard} ${selected ? styles.pickActive : ""}`}
+                    disabled={!!t.disabled}
+                    onClick={() => {
+                      setType(t.value);
+                      setTestStatus("idle");
+                    }}
+                  >
+                    {selected && (
+                      <CheckmarkCircle20Filled className={styles.pickCheck} />
+                    )}
+                    <Database24Filled className={styles.pickIcon} />
+                    <span className={styles.pickLabel}>{t.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

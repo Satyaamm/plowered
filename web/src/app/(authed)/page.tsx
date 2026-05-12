@@ -62,7 +62,7 @@ const useStyles = makeStyles({
     width: "32px",
     height: "32px",
     borderRadius: "6px",
-    backgroundColor: tokens.colorBrandBackground2,
+    backgroundColor: "#FEF4E8",
     color: tokens.colorBrandForeground1,
     display: "flex",
     alignItems: "center",
