@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Body1,
   Button,
@@ -21,6 +21,7 @@ import {
 import { ArrowUndo16Regular, Delete16Regular } from "@fluentui/react-icons";
 import { useDeleted, usePrincipal, usePurgeRecord, useRestoreRecord } from "@/lib/hooks";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { Paginator } from "@/components/paginator";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "20px" },
@@ -45,6 +46,15 @@ export default function DeletedPage() {
   });
   const restore = useRestoreRecord();
   const purge = usePurgeRecord();
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+
+  const total = data?.length ?? 0;
+  const pageRows = useMemo(() => {
+    if (!data) return [];
+    const start = page * pageSize;
+    return data.slice(start, start + pageSize);
+  }, [data, page, pageSize]);
 
   return (
     <div className={styles.root}>
@@ -83,6 +93,14 @@ export default function DeletedPage() {
       )}
 
       {data && data.length > 0 && (
+        <div
+          style={{
+            backgroundColor: tokens.colorNeutralBackground1,
+            borderRadius: "6px",
+            boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
+            overflow: "hidden",
+          }}
+        >
         <Table aria-label="Recycle bin">
           <TableHeader>
             <TableRow>
@@ -95,7 +113,7 @@ export default function DeletedPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((rec) => (
+            {pageRows.map((rec) => (
               <TableRow key={rec.ID}>
                 <TableCell className={styles.mono}>{rec.ResourceType}</TableCell>
                 <TableCell className={styles.mono}>
@@ -149,6 +167,14 @@ export default function DeletedPage() {
             ))}
           </TableBody>
         </Table>
+        <Paginator
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+        </div>
       )}
 
       {(restore.error || purge.error) && (

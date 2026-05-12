@@ -20,6 +20,7 @@ import {
 import { ArrowDownload16Regular } from "@fluentui/react-icons";
 import { useAuditFeed, type AuditEvent } from "@/lib/hooks";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { Paginator } from "@/components/paginator";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "20px" },
@@ -78,6 +79,8 @@ export default function AuditPage() {
   const styles = useStyles();
   const { data, isLoading, error } = useAuditFeed(500);
   const [filter, setFilter] = useState("");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -89,6 +92,11 @@ export default function AuditPage() {
         .some((v) => v.toLowerCase().includes(q)),
     );
   }, [data, filter]);
+
+  const pageRows = useMemo(() => {
+    const start = page * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
   return (
     <div className={styles.root}>
@@ -133,6 +141,14 @@ export default function AuditPage() {
               }
             />
           ) : (
+            <div
+              style={{
+                backgroundColor: tokens.colorNeutralBackground1,
+                borderRadius: "6px",
+                boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
+                overflow: "hidden",
+              }}
+            >
             <Table aria-label="Audit events">
               <TableHeader>
                 <TableRow>
@@ -144,7 +160,7 @@ export default function AuditPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((e) => (
+                {pageRows.map((e) => (
                   <TableRow key={e.event_id}>
                     <TableCell>
                       <Text className={styles.meta}>
@@ -165,6 +181,14 @@ export default function AuditPage() {
                 ))}
               </TableBody>
             </Table>
+            <Paginator
+              total={filtered.length}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+            </div>
           )}
         </>
       )}

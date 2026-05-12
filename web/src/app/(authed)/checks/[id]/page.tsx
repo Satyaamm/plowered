@@ -128,7 +128,7 @@ export default function CheckDetailPage() {
           <div className={styles.chartWrap}>
             <ResponsiveContainer>
               <LineChart data={chartData}>
-                <CartesianGrid stroke="#EDE2D0" />
+                <CartesianGrid stroke="#E5E7EB" />
                 <XAxis
                   dataKey="t"
                   tickFormatter={(v) =>
@@ -147,7 +147,7 @@ export default function CheckDetailPage() {
                 <Line
                   type="monotone"
                   dataKey="value"
-                  stroke="#B8521B"
+                  stroke="#F38020"
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}

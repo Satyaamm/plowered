@@ -10,7 +10,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         minHeight: "100vh",
         display: "grid",
         gridTemplateColumns: "1fr",
-        background: "#FAF6F0",
+        background: "#F5F5F5",
       }}
     >
       {children}

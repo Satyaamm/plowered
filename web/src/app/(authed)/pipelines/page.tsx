@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import {
   Button,
   Subtitle2,
@@ -17,6 +18,7 @@ import {
 } from "@fluentui/react-components";
 import { useTriggerPipeline, usePipelines } from "@/lib/hooks";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { Paginator } from "@/components/paginator";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "24px" },
@@ -34,6 +36,15 @@ export default function PipelinesPage() {
   const styles = useStyles();
   const { data, isLoading, error } = usePipelines();
   const trigger = useTriggerPipeline();
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+
+  const total = data?.length ?? 0;
+  const pageRows = useMemo(() => {
+    if (!data) return [];
+    const start = page * pageSize;
+    return data.slice(start, start + pageSize);
+  }, [data, page, pageSize]);
 
   return (
     <div className={styles.root}>
@@ -64,6 +75,14 @@ export default function PipelinesPage() {
       )}
 
       {data && data.length > 0 && (
+        <div
+          style={{
+            backgroundColor: tokens.colorNeutralBackground1,
+            borderRadius: "6px",
+            boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
+            overflow: "hidden",
+          }}
+        >
         <Table aria-label="Pipelines">
           <TableHeader>
             <TableRow>
@@ -75,7 +94,7 @@ export default function PipelinesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((p) => (
+            {pageRows.map((p) => (
               <TableRow key={p.ID}>
                 <TableCell>
                   <Link
@@ -119,6 +138,14 @@ export default function PipelinesPage() {
             ))}
           </TableBody>
         </Table>
+        <Paginator
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+        </div>
       )}
 
       {trigger.isSuccess && !trigger.isPending && (

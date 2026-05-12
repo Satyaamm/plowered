@@ -34,6 +34,7 @@ import {
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { Paginator } from "@/components/paginator";
 
 interface CatalogAsset {
   id: string;
@@ -106,6 +107,8 @@ export default function CatalogPage() {
   const styles = useStyles();
   const [type, setType] = useState("all");
   const [q, setQ] = useState("");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
 
   const list = useQuery({
     queryKey: ["assets", "catalog", type],
@@ -315,7 +318,7 @@ export default function CatalogPage() {
         {filtered.length > 0 && (
           <div className={styles.grid}>
             <DataGrid
-              items={filtered}
+              items={filtered.slice(page * pageSize, (page + 1) * pageSize)}
               columns={columns}
               sortable
               getRowId={(item) => item.id}
@@ -339,6 +342,13 @@ export default function CatalogPage() {
                 )}
               </DataGridBody>
             </DataGrid>
+            <Paginator
+              total={filtered.length}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </div>

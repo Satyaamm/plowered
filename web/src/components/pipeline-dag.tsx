@@ -72,8 +72,8 @@ export function PipelineDAG({ tasks }: { tasks: Task[] }) {
       position: positions.get(t.ID) ?? { x: 0, y: 0 },
       data: { label: `${t.ID}\n${t.Type}` },
       style: {
-        background: "#FAF6F0",
-        border: "1px solid #B8521B",
+        background: "#FAFAFA",
+        border: "1px solid #F38020",
         borderRadius: 6,
         padding: "10px 14px",
         fontSize: 12,
@@ -89,7 +89,7 @@ export function PipelineDAG({ tasks }: { tasks: Task[] }) {
         source: src,
         target: t.ID,
         animated: false,
-        style: { stroke: "#B8521B" },
+        style: { stroke: "#F38020" },
       })),
     );
     return { nodes, edges };
@@ -104,7 +104,7 @@ export function PipelineDAG({ tasks }: { tasks: Task[] }) {
   }
 
   return (
-    <div style={{ height: 360, border: "1px solid #EDE2D0", borderRadius: 8 }}>
+    <div style={{ height: 360, border: "1px solid #E5E7EB", borderRadius: 8 }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}

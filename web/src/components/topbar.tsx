@@ -33,7 +33,7 @@ const useStyles = makeStyles({
     alignItems: "center",
     justifyContent: "space-between",
     padding: "0 16px",
-    backgroundColor: "#FAF6F0",
+    backgroundColor: tokens.colorNeutralBackground1,
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
     position: "sticky",
     top: 0,

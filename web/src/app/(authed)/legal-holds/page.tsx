@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -32,6 +32,7 @@ import {
 } from "@/lib/hooks";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { Paginator } from "@/components/paginator";
 
 const useStyles = makeStyles({
   body: { display: "flex", flexDirection: "column", gap: "16px" },
@@ -59,6 +60,15 @@ export default function LegalHoldsPage() {
   const [matter, setMatter] = useState("");
   const [reason, setReason] = useState("");
   const [resourceTypes, setResourceTypes] = useState("");
+
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const total = data?.length ?? 0;
+  const pageRows = useMemo(() => {
+    if (!data) return [];
+    const start = page * pageSize;
+    return data.slice(start, start + pageSize);
+  }, [data, page, pageSize]);
 
   const onIssue = async () => {
     await issue.mutateAsync({
@@ -152,7 +162,7 @@ export default function LegalHoldsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.map((h) => {
+                {pageRows.map((h) => {
                   const released = h.ReleasedAt && h.ReleasedAt !== "0001-01-01T00:00:00Z";
                   return (
                     <TableRow key={h.ID}>
@@ -198,6 +208,13 @@ export default function LegalHoldsPage() {
                 })}
               </TableBody>
             </Table>
+            <Paginator
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </div>

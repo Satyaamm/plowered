@@ -10,7 +10,7 @@ const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "plowered";
 export default function AuthedLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
-      <div style={{ display: "flex", minHeight: "100vh", background: "#F4ECDF" }}>
+      <div style={{ display: "flex", minHeight: "100vh", background: "#FFFFFF" }}>
         <Sidebar appName={APP_NAME} />
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <Topbar />

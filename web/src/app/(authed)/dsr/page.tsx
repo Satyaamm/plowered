@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -30,6 +30,7 @@ import { Add20Regular, ShieldKeyhole20Regular } from "@fluentui/react-icons";
 import { useCreateDSR, useDSRRequests, useUpdateDSRStatus } from "@/lib/hooks";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { Paginator } from "@/components/paginator";
 
 const TYPES = ["access", "portability", "rectification", "erasure", "restriction"];
 const STATUS = ["received", "processing", "completed", "rejected"];
@@ -68,6 +69,15 @@ export default function DSRPage() {
   const [subject, setSubject] = useState("");
   const [type, setType] = useState("access");
   const [notes, setNotes] = useState("");
+
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const total = data?.length ?? 0;
+  const pageRows = useMemo(() => {
+    if (!data) return [];
+    const start = page * pageSize;
+    return data.slice(start, start + pageSize);
+  }, [data, page, pageSize]);
 
   const onCreate = async () => {
     await create.mutateAsync({ subject_id: subject, type, notes });
@@ -158,7 +168,7 @@ export default function DSRPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.map((r) => {
+                {pageRows.map((r) => {
                   const due = new Date(r.DueAt).getTime();
                   const overdue = r.Status !== "completed" && r.Status !== "rejected" && due < now;
                   return (
@@ -205,6 +215,13 @@ export default function DSRPage() {
                 })}
               </TableBody>
             </Table>
+            <Paginator
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import {
   Body1,
   Table,
@@ -17,6 +18,7 @@ import {
 import { useRuns } from "@/lib/hooks";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { Paginator } from "@/components/paginator";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "24px" },
@@ -37,7 +39,16 @@ function durationLabel(start?: string, end?: string): string {
 
 export default function RunsPage() {
   const styles = useStyles();
-  const { data, isLoading, error } = useRuns({ limit: 100 });
+  const { data, isLoading, error } = useRuns({ limit: 500 });
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+
+  const total = data?.length ?? 0;
+  const pageRows = useMemo(() => {
+    if (!data) return [];
+    const start = page * pageSize;
+    return data.slice(start, start + pageSize);
+  }, [data, page, pageSize]);
 
   return (
     <div className={styles.root}>
@@ -59,6 +70,14 @@ export default function RunsPage() {
       )}
 
       {data && data.length > 0 && (
+        <div
+          style={{
+            backgroundColor: tokens.colorNeutralBackground1,
+            borderRadius: "6px",
+            boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
+            overflow: "hidden",
+          }}
+        >
         <Table aria-label="Recent runs">
           <TableHeader>
             <TableRow>
@@ -71,7 +90,7 @@ export default function RunsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((r) => (
+            {pageRows.map((r) => (
               <TableRow key={r.ID}>
                 <TableCell>
                   <Link
@@ -113,6 +132,14 @@ export default function RunsPage() {
             ))}
           </TableBody>
         </Table>
+        <Paginator
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+        </div>
       )}
     </div>
   );

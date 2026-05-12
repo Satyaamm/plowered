@@ -17,7 +17,7 @@ const useStyles = makeStyles({
     alignItems: "center",
     justifyContent: "center",
     padding: "32px 16px",
-    backgroundColor: "#FAF6F0",
+    backgroundColor: "#F5F5F5",
   },
   brand: {
     display: "flex",
@@ -34,7 +34,7 @@ const useStyles = makeStyles({
     width: "12px",
     height: "12px",
     borderRadius: "2px",
-    backgroundColor: "#B8521B",
+    backgroundColor: tokens.colorBrandBackground,
   },
   card: {
     width: "100%",

@@ -171,8 +171,8 @@ function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
         ),
       },
       style: {
-        background: onCycle ? "#FFE9E5" : "#FAF6F0",
-        border: `1.5px solid ${onCycle ? "#C03B2C" : "#B8521B"}`,
+        background: onCycle ? "#FFE9E5" : "#FAFAFA",
+        border: `1.5px solid ${onCycle ? "#C03B2C" : "#F38020"}`,
         borderRadius: 6,
         padding: "10px 14px",
         width: 200,
@@ -185,7 +185,7 @@ function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
       id: `${src}->${t.ID}`,
       source: src,
       target: t.ID,
-      style: { stroke: "#B8521B", strokeWidth: 1.5 },
+      style: { stroke: "#F38020", strokeWidth: 1.5 },
       type: "smoothstep",
     })),
   );
@@ -220,7 +220,7 @@ const useStyles = makeStyles({
     border: "none",
     textAlign: "left",
     color: tokens.colorNeutralForeground1,
-    ":hover": { backgroundColor: "#FBF1EB" },
+    ":hover": { backgroundColor: tokens.colorBrandBackground2 },
   },
   canvas: {
     backgroundColor: tokens.colorNeutralBackground1,
@@ -402,7 +402,7 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
               className={styles.paletteItem}
               onClick={() => addTask(p.type)}
             >
-              <span style={{ color: "#B8521B" }}>{p.icon}</span>
+              <span style={{ color: "#F38020" }}>{p.icon}</span>
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{p.label}</div>
                 <div style={{ fontSize: 11, color: "#7A6A55" }}>{p.desc}</div>

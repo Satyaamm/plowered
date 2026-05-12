@@ -115,7 +115,7 @@ function LoginInner() {
                   {" "}
                   <a
                     role="button"
-                    style={{ color: "#B8521B", cursor: "pointer", fontWeight: 600 }}
+                    style={{ color: "#F38020", cursor: "pointer", fontWeight: 600 }}
                     onClick={async () => {
                       await resend.mutateAsync(email);
                     }}
