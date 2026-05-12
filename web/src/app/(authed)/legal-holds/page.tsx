@@ -103,7 +103,7 @@ export default function LegalHoldsPage() {
                 <DialogContent>
                   <div className={styles.formStack}>
                     <Field label="Matter" required>
-                      <Input value={matter} onChange={(_, d) => setMatter(d.value)} placeholder="Acme v Plowered #2026-04" />
+                      <Input value={matter} onChange={(_, d) => setMatter(d.value)} placeholder="Matter reference (e.g. case-2026-04)" />
                     </Field>
                     <Field label="Reason">
                       <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={2} />

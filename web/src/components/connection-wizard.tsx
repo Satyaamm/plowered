@@ -332,7 +332,7 @@ export function ConnectionWizard({
               <Input
                 value={name}
                 onChange={(_, d) => dirty(setName)(d.value)}
-                placeholder="Production warehouse"
+                placeholder="My production warehouse"
               />
             </Field>
 
@@ -343,7 +343,7 @@ export function ConnectionWizard({
                     <Input
                       value={host}
                       onChange={(_, d) => dirty(setHost)(d.value)}
-                      placeholder="db.acme.com"
+                      placeholder="db.example.com"
                     />
                   </Field>
                   <Field label="Port" required>
@@ -365,7 +365,7 @@ export function ConnectionWizard({
                   <Input
                     value={user}
                     onChange={(_, d) => dirty(setUser)(d.value)}
-                    placeholder="plowered_reader"
+                    placeholder="db_user"
                   />
                 </Field>
                 <Field
@@ -410,7 +410,7 @@ export function ConnectionWizard({
                   <Input
                     value={user}
                     onChange={(_, d) => dirty(setUser)(d.value)}
-                    placeholder="PLOWERED_READER"
+                    placeholder="DB_USER"
                   />
                 </Field>
                 <Field
@@ -469,7 +469,7 @@ export function ConnectionWizard({
                   <Input
                     value={bqProjectID}
                     onChange={(_, d) => dirty(setBqProjectID)(d.value)}
-                    placeholder="acme-warehouse"
+                    placeholder="my-gcp-project"
                   />
                 </Field>
                 <div className={styles.rowGrid}>

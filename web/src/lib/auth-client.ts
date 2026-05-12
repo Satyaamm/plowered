@@ -10,10 +10,20 @@ import {
 export interface Me {
   user_id: string;
   tenant_id: string;
+  tenant_name: string;
+  tenant_slug: string;
   email: string;
   full_name: string;
   roles: string[];
   email_verified: boolean;
+}
+
+// One row from GET /v1/workspaces/mine.
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  roles: string[];
 }
 
 const ME_KEY = ["auth", "me"];
@@ -63,6 +73,19 @@ export function useMe() {
     queryFn: () => call<Me>("GET", "/v1/auth/me"),
     retry: false,
     staleTime: 30_000,
+  });
+}
+
+// useMyWorkspaces lists every tenant the authenticated user belongs to.
+// Powers the topbar workspace switcher.
+export function useMyWorkspaces() {
+  return useQuery({
+    queryKey: ["workspaces", "mine"],
+    queryFn: async () => {
+      const d = await call<{ workspaces: Workspace[] }>("GET", "/v1/workspaces/mine");
+      return d.workspaces ?? [];
+    },
+    staleTime: 60_000,
   });
 }
 

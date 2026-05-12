@@ -49,6 +49,10 @@ func authHandlers(mux *http.ServeMux, d AuthDeps) {
 	mux.HandleFunc("GET /v1/auth/verify",                 verifyHandler(d))
 	mux.HandleFunc("POST /v1/auth/resend-verification",   resendVerificationHandler(d))
 	mux.HandleFunc("GET /v1/auth/me",                     meHandler(d))
+	// Workspace listing for the topbar switcher. Returns every tenant
+	// the authenticated user holds a membership in, joined with the
+	// tenant name/slug.
+	mux.HandleFunc("GET /v1/workspaces/mine",             myWorkspacesHandler(d))
 }
 
 // ----- request / response shapes -----
@@ -89,12 +93,14 @@ type loginResp struct {
 }
 
 type meResp struct {
-	UserID    string   `json:"user_id"`
-	TenantID  string   `json:"tenant_id"`
-	Email     string   `json:"email"`
-	FullName  string   `json:"full_name"`
-	Roles     []string `json:"roles"`
-	Verified  bool     `json:"email_verified"`
+	UserID       string   `json:"user_id"`
+	TenantID     string   `json:"tenant_id"`
+	TenantName   string   `json:"tenant_name"`
+	TenantSlug   string   `json:"tenant_slug"`
+	Email        string   `json:"email"`
+	FullName     string   `json:"full_name"`
+	Roles        []string `json:"roles"`
+	Verified     bool     `json:"email_verified"`
 }
 
 // ----- handlers -----
@@ -339,6 +345,41 @@ func logoutHandler(d AuthDeps) http.HandlerFunc {
 	}
 }
 
+// myWorkspacesHandler powers the topbar workspace switcher. Lists every
+// tenant the authenticated user is a member of with name + slug + roles
+// so the menu can render them without N+1 round-trips.
+func myWorkspacesHandler(d AuthDeps) http.HandlerFunc {
+	type item struct {
+		ID    string   `json:"id"`
+		Name  string   `json:"name"`
+		Slug  string   `json:"slug"`
+		Roles []string `json:"roles"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := principalFrom(r)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, errorBody{"unauthenticated", "no active session"})
+			return
+		}
+		mems, err := d.Identity.ListForUser(r.Context(), p.ID)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		out := make([]item, 0, len(mems))
+		for _, m := range mems {
+			t, err := d.Identity.GetTenantByID(r.Context(), m.TenantID)
+			if err != nil || t == nil {
+				continue
+			}
+			out = append(out, item{
+				ID: t.ID, Name: t.Name, Slug: t.Slug, Roles: m.Roles,
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"workspaces": out})
+	}
+}
+
 func meHandler(d AuthDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// /me reads the principal the auth chain placed in context. If the
@@ -357,13 +398,20 @@ func meHandler(d AuthDeps) http.HandlerFunc {
 				"session valid but user missing"})
 			return
 		}
+		var tenantName, tenantSlug string
+		if t, err := d.Identity.GetTenantByID(r.Context(), p.TenantID); err == nil && t != nil {
+			tenantName = t.Name
+			tenantSlug = t.Slug
+		}
 		writeJSON(w, http.StatusOK, meResp{
-			UserID:   p.ID,
-			TenantID: p.TenantID,
-			Email:    u.Email,
-			FullName: u.FullName,
-			Roles:    p.Roles,
-			Verified: u.IsEmailVerified(),
+			UserID:     p.ID,
+			TenantID:   p.TenantID,
+			TenantName: tenantName,
+			TenantSlug: tenantSlug,
+			Email:      u.Email,
+			FullName:   u.FullName,
+			Roles:      p.Roles,
+			Verified:   u.IsEmailVerified(),
 		})
 	}
 }

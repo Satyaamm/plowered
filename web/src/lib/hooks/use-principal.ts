@@ -12,6 +12,8 @@ export function usePrincipal() {
       principal: {
         id: data.user_id,
         tenantId: data.tenant_id,
+        tenantName: data.tenant_name,
+        tenantSlug: data.tenant_slug,
         email: data.email,
         fullName: data.full_name,
         roles: data.roles ?? [],
