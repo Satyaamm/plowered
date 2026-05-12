@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
-  Body1,
   Button,
   Menu,
   MenuItem,
@@ -17,7 +16,6 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -26,6 +24,7 @@ import { useChecks, useDeleteCheck, useRunCheck, useUpdateCheck } from "@/lib/ho
 import { CheckDesigner } from "@/components/check-designer";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
+import { PageHeader } from "@/components/page-header";
 import type { Check } from "@/lib/types-orchestration";
 
 const useStyles = makeStyles({
@@ -61,18 +60,14 @@ export default function ChecksPage() {
 
   return (
     <div className={styles.root}>
-      <div className={styles.header}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Title2>Quality checks</Title2>
-          <Body1>
-            Configurable assertions on assets — row count, freshness, nulls,
-            uniqueness, and custom SQL.
-          </Body1>
-        </div>
-        <Button appearance="primary" icon={<Add20Regular />} onClick={openNew}>
-          New check
-        </Button>
-      </div>
+      <PageHeader
+        crumbs={[{ label: "Checks" }]}
+        actions={
+          <Button appearance="primary" icon={<Add20Regular />} onClick={openNew}>
+            New check
+          </Button>
+        }
+      />
 
       {isLoading && <LoadingState />}
       {error && <ErrorBanner error={error} />}

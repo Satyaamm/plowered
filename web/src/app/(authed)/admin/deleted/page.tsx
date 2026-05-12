@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import {
-  Body1,
   Button,
   Dropdown,
   Field,
@@ -14,7 +13,6 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -22,6 +20,7 @@ import { ArrowUndo16Regular, Delete16Regular } from "@fluentui/react-icons";
 import { useDeleted, usePrincipal, usePurgeRecord, useRestoreRecord } from "@/lib/hooks";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
+import { PageHeader } from "@/components/page-header";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "20px" },
@@ -58,13 +57,7 @@ export default function DeletedPage() {
 
   return (
     <div className={styles.root}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <Title2>Recycle bin</Title2>
-        <Body1>
-          Every deleted record is captured here. Restore at any time. Only a
-          super_admin can permanently delete a tombstone.
-        </Body1>
-      </div>
+      <PageHeader crumbs={[{ label: "Recycle bin" }]} />
 
       <div className={styles.toolbar}>
         <Field label="Resource type">

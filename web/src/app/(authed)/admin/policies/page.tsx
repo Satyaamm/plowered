@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  Body1,
   Button,
   Card,
   CardHeader,
@@ -20,7 +19,6 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -30,6 +28,7 @@ import {
   useDeletePolicy,
   usePolicies,
 } from "@/lib/hooks";
+import { PageHeader } from "@/components/page-header";
 import type {
   ConditionType,
   PolicyEffect,
@@ -108,13 +107,7 @@ export default function PoliciesPage() {
 
   return (
     <div className={styles.root}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <Title2>Access policies</Title2>
-        <Body1>
-          Per-resource ABAC rules layered on top of workspace roles. Deny
-          rules override allow.
-        </Body1>
-      </div>
+      <PageHeader crumbs={[{ label: "Policies" }]} />
 
       <div className={styles.twoCol}>
         <Card>

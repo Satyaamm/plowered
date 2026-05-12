@@ -12,13 +12,13 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import { useTriggerPipeline, usePipelines } from "@/lib/hooks";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
+import { PageHeader } from "@/components/page-header";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "24px" },
@@ -48,17 +48,14 @@ export default function PipelinesPage() {
 
   return (
     <div className={styles.root}>
-      <div className={styles.header}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Title2>Pipelines</Title2>
-          <Text className={styles.meta}>
-            {data?.length ?? 0} pipeline{(data?.length ?? 0) === 1 ? "" : "s"}
-          </Text>
-        </div>
-        <Link href="/pipelines/new">
-          <Button appearance="primary">New pipeline</Button>
-        </Link>
-      </div>
+      <PageHeader
+        crumbs={[{ label: "Pipelines" }]}
+        actions={
+          <Link href="/pipelines/new">
+            <Button appearance="primary">New pipeline</Button>
+          </Link>
+        }
+      />
 
       {isLoading && <LoadingState />}
       {error && <ErrorBanner error={error} />}

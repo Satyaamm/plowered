@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
-  Body1,
   Table,
   TableBody,
   TableCell,
@@ -11,7 +10,6 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -19,6 +17,7 @@ import { useRuns } from "@/lib/hooks";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
+import { PageHeader } from "@/components/page-header";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "24px" },
@@ -52,13 +51,7 @@ export default function RunsPage() {
 
   return (
     <div className={styles.root}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <Title2>Runs</Title2>
-        <Body1>
-          Most recent pipeline runs across every pipeline. Polls every 5
-          seconds while runs are in flight.
-        </Body1>
-      </div>
+      <PageHeader crumbs={[{ label: "Runs" }]} />
 
       {isLoading && <LoadingState />}
       {error && <ErrorBanner error={error} />}

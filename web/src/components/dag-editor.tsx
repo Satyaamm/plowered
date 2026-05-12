@@ -451,12 +451,18 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
         </div>
       </div>
 
-      {/* Right-side task settings drawer */}
+      {/* Right-side task settings drawer.
+          modalType="non-modal" is critical: the default modal drawer
+          drops a backdrop that captures pointer events, which means
+          you can't drag a node while the panel is open. Non-modal
+          lets the canvas stay interactive — exactly the n8n /
+          Dagster pattern. */}
       <Drawer
         open={!!selected}
         onOpenChange={(_, d) => {
           if (!d.open) setSelectedID(null);
         }}
+        modalType="non-modal"
         position="end"
         separator
         size="medium"

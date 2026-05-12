@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Body1,
   Card,
   CardHeader,
   Subtitle2,
@@ -12,13 +11,13 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import { useChannels, useDeliveries, useNotifyRules } from "@/lib/hooks";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { PageHeader } from "@/components/page-header";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "24px" },
@@ -39,13 +38,7 @@ export default function AlertsPage() {
 
   return (
     <div className={styles.root}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <Title2>Alerts</Title2>
-        <Body1>
-          Notification deliveries and the channels + rules that route them.
-          Polls every 10 seconds.
-        </Body1>
-      </div>
+      <PageHeader crumbs={[{ label: "Alerts" }]} />
 
       <div className={styles.twoCol}>
         <Card>

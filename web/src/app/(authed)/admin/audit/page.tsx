@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import {
-  Body1,
   Button,
   Field,
   Input,
@@ -13,7 +12,6 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -21,6 +19,7 @@ import { ArrowDownload16Regular } from "@fluentui/react-icons";
 import { useAuditFeed, type AuditEvent } from "@/lib/hooks";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
+import { PageHeader } from "@/components/page-header";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "20px" },
@@ -100,13 +99,7 @@ export default function AuditPage() {
 
   return (
     <div className={styles.root}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <Title2>Audit log</Title2>
-        <Body1>
-          Append-only record of every authenticated mutation. Polls every
-          15 seconds.
-        </Body1>
-      </div>
+      <PageHeader crumbs={[{ label: "Audit log" }]} />
 
       {isLoading && <LoadingState />}
       {error && <ErrorBanner error={error} />}
