@@ -34,6 +34,7 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { ConnectionWizard } from "@/components/connection-wizard";
 import { Paginator } from "@/components/paginator";
+import { Truncate } from "@/components/truncate";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import {
   Connection,
@@ -108,7 +109,7 @@ export default function ConnectionsPage() {
         compare: (a, b) => a.name.localeCompare(b.name),
         renderHeaderCell: () => "Name",
         renderCell: (item) => (
-          <span style={{ fontWeight: 600 }}>{item.name}</span>
+          <Truncate text={item.name} style={{ fontWeight: 600 }} />
         ),
       }),
       createTableColumn<Connection>({
@@ -124,11 +125,8 @@ export default function ConnectionsPage() {
         renderHeaderCell: () => "Host",
         renderCell: (item) => {
           const cfg = item.config as any;
-          return (
-            <span className={styles.mono}>
-              {cfg?.host}:{cfg?.port ?? 5432}/{cfg?.database}
-            </span>
-          );
+          const host = `${cfg?.host ?? ""}:${cfg?.port ?? 5432}/${cfg?.database ?? ""}`;
+          return <Truncate text={host} className={styles.mono} />;
         },
       }),
       createTableColumn<Connection>({
@@ -339,8 +337,17 @@ export default function ConnectionsPage() {
               items={pageRows}
               columns={columns}
               sortable
+              resizableColumns
               getRowId={(item) => item.id}
               focusMode="composite"
+              columnSizingOptions={{
+                name:    { minWidth: 140, defaultWidth: 200 },
+                type:    { minWidth: 90,  defaultWidth: 110 },
+                host:    { minWidth: 220, defaultWidth: 320 },
+                health:  { minWidth: 120, defaultWidth: 140 },
+                checked: { minWidth: 140, defaultWidth: 180 },
+                actions: { minWidth: 220, defaultWidth: 220 },
+              }}
             >
               <DataGridHeader>
                 <DataGridRow>

@@ -35,6 +35,7 @@ import { api } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
+import { Truncate } from "@/components/truncate";
 
 interface CatalogAsset {
   id: string;
@@ -97,10 +98,44 @@ const TYPE_TABS: { key: string; label: string }[] = [
   { key: "dashboard", label: "Dashboards" },
 ];
 
-function tagColor(tag: string): "informative" | "danger" | "warning" | "success" | "subtle" {
-  if (tag.startsWith("class:phi") || tag.startsWith("class:pci")) return "danger";
-  if (tag.startsWith("class:pii") || tag.startsWith("class:secret")) return "warning";
+type BadgeColor =
+  | "brand" | "danger" | "important" | "informative"
+  | "severe" | "subtle" | "success" | "warning";
+
+/**
+ * Semantic colour for a classification tag.
+ *
+ *   secret / phi / pci  → danger (red) — highest-severity, regulated
+ *   pii                 → warning (yellow) — important but not regulated
+ *   anything else       → informative (blue) — generic
+ */
+function tagColor(tag: string): BadgeColor {
+  if (
+    tag.startsWith("class:secret") ||
+    tag.startsWith("class:phi") ||
+    tag.startsWith("class:pci")
+  ) return "danger";
+  if (tag.startsWith("class:pii")) return "warning";
   return "informative";
+}
+
+/**
+ * Asset-type badge colour. Each type gets its own hue so a scrolling
+ * list is scannable without reading every label — and quieter types
+ * (column, the highest-volume row) intentionally render subtle so
+ * they don't drown out the rest of the page in brand orange.
+ */
+function typeColor(type: string): BadgeColor {
+  switch (type) {
+    case "table":     return "informative";
+    case "view":      return "success";
+    case "schema":    return "important";
+    case "dashboard": return "brand";
+    case "model":     return "severe";
+    case "pipeline":  return "brand";
+    case "column":    return "subtle";
+    default:          return "subtle";
+  }
 }
 
 export default function CatalogPage() {
@@ -151,9 +186,10 @@ export default function CatalogPage() {
           <Link
             href={`/asset/${encodeURIComponent(item.qualified_name)}`}
             className={styles.rowName}
+            style={{ display: "block", minWidth: 0, maxWidth: "100%" }}
           >
-            <span style={{ fontWeight: 600 }}>{item.name}</span>
-            <span className={styles.mono}>{item.qualified_name}</span>
+            <Truncate text={item.name} style={{ fontWeight: 600 }} />
+            <Truncate text={item.qualified_name} className={styles.mono} />
           </Link>
         ),
       }),
@@ -162,7 +198,7 @@ export default function CatalogPage() {
         compare: (a, b) => a.type.localeCompare(b.type),
         renderHeaderCell: () => "Type",
         renderCell: (item) => (
-          <Badge appearance="outline" color="brand">
+          <Badge appearance="outline" color={typeColor(item.type)}>
             {item.type}
           </Badge>
         ),
@@ -321,9 +357,17 @@ export default function CatalogPage() {
               items={filtered.slice(page * pageSize, (page + 1) * pageSize)}
               columns={columns}
               sortable
+              resizableColumns
               getRowId={(item) => item.id}
               focusMode="composite"
               size="small"
+              columnSizingOptions={{
+                name:    { minWidth: 280, defaultWidth: 420 },
+                type:    { minWidth: 100, defaultWidth: 110 },
+                tags:    { minWidth: 200, defaultWidth: 260 },
+                trust:   { minWidth: 120, defaultWidth: 140 },
+                updated: { minWidth: 140, defaultWidth: 180 },
+              }}
             >
               <DataGridHeader>
                 <DataGridRow>
