@@ -6,10 +6,9 @@ walk them through this script.
 
 ## The pitch in one sentence
 
-> Plowered is an open-source data context platform — catalog, governance,
-> and AI-native lineage — with built-in tamper-evident audit, GDPR DSRs,
-> and litigation-hold gates that fire at the runtime layer instead of as
-> compliance theatre.
+> Plowered is a data context platform — catalog, governance, and AI-native
+> lineage — with built-in tamper-evident audit, GDPR DSRs, and litigation-
+> hold gates that fire at the runtime layer instead of as compliance theatre.
 
 ## What works end-to-end
 
@@ -50,9 +49,9 @@ walk them through this script.
    and the row appears in the recycle bin until a super_admin purges.
 8. Compliance → DSR. File an erasure request. Show the 30-day clock.
 
-## What an Atlan / Collibra prospect cares about
+## What an enterprise prospect cares about
 
-- **It's open source.** Self-hosted, no per-asset pricing.
+- **Predictable pricing.** No per-asset surprises.
 - **Audit-by-design.** Every read and write is hash-chained from the
   application layer. Three sentences in HIPAA / SOC2 paperwork map
   directly to columns in `audit_events`.

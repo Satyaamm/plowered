@@ -33,9 +33,9 @@ const (
 	KindAnthropic Kind = "anthropic"
 	KindOpenAI    Kind = "openai"
 	KindDeepSeek  Kind = "deepseek"
-	// KindCustom is for OpenAI-compatible self-hosted/proxy endpoints
-	// (Ollama, LiteLLM, OpenRouter, vLLM, etc.). The adapter reuses the
-	// OpenAI wire format and lets BaseURL override the API host.
+	// KindCustom is for OpenAI-compatible endpoints (Ollama, LiteLLM,
+	// OpenRouter, vLLM, etc.). The adapter reuses the OpenAI wire
+	// format and lets BaseURL override the API host.
 	KindCustom Kind = "openai-compatible"
 )
 

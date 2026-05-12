@@ -38,8 +38,8 @@ const STEPS: Step[] = [
     route: "/",
     title: "Welcome to Plowered",
     description:
-      "Plowered is the open-source data context platform — an Atlan / Collibra alternative your team " +
-      "self-hosts. It catalogs every dataset, runs quality checks, orchestrates pipelines, tracks " +
+      "Plowered is the data context platform for modern data teams. " +
+      "It catalogs every dataset, runs quality checks, orchestrates pipelines, tracks " +
       "lineage, and surfaces all of it to humans and AI agents through one API. This guided demo will " +
       "walk you through every page so you know exactly where to look for what. Each step auto-advances " +
       "in 6 seconds — hover the popover to pause, or use Back / Next / Skip tour.",

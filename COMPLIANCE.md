@@ -10,9 +10,8 @@ spreadsheets; everything above is the rationale.
 
 ## 1. Scope
 
-What we are: enterprise software customers self-host or run as a managed
-SaaS that catalogs metadata about their data systems and orchestrates
-pipelines that touch them.
+What we are: enterprise software that catalogs metadata about customer
+data systems and orchestrates pipelines that touch them.
 
 What we touch:
 - Metadata about tables, columns, dashboards, models, runs (low risk).
@@ -150,8 +149,7 @@ the user acting on themselves.
 - Workforce training and BAA template — operational, not a code concern.
 
 ### Physical safeguards
-- Provided by the underlying cloud provider (the customer's account when
-  self-hosted, the SaaS provider's account when managed).
+- Provided by the underlying cloud provider on which Plowered runs.
 
 ### Technical safeguards
 - **Access control (§164.312(a))**: per-asset ABAC; tenant isolation in

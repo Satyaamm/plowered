@@ -3,8 +3,8 @@ info:
   title: Plowered API
   version: "1.0.0"
   description: |
-    Plowered is a self-hosted, AI-native data context platform: catalog,
-    orchestration, quality, governance, lineage, ETL/ELT, MCP, all in one.
+    Plowered is an AI-native data context platform: catalog, orchestration,
+    quality, governance, lineage, ETL/ELT, MCP, all in one.
 
     All endpoints sit behind the same auth chain — session cookie (web UI)
     or Bearer JWT (integrations). Tenant isolation is enforced server-side

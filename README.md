@@ -1,8 +1,8 @@
 # Plowered
 
-Open, self-hostable **data context platform** — a catalog + governance + lineage layer
-that data teams (and the AI agents that act on their behalf) can trust. Think
-Atlan / Collibra / OpenMetadata, but Go-native, single-binary, BYO-LLM.
+A **data context platform** — a catalog + governance + lineage layer that data
+teams (and the AI agents that act on their behalf) can trust. Go-native,
+single-binary, BYO-LLM.
 
 ## What's in the box
 

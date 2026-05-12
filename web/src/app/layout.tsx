@@ -6,7 +6,7 @@ const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "plowered";
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: "Open data context platform — catalog, governance, and AI-native lineage.",
+  description: "Data context platform — catalog, governance, and AI-native lineage.",
 };
 
 // The root layout is intentionally minimal: only providers + body. The
