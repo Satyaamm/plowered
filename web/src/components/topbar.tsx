@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useState, type KeyboardEvent } from "react";
 import {
   Avatar,
-  Badge,
   Input,
   Menu,
   MenuDivider,
@@ -12,7 +11,6 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
-  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -117,7 +115,6 @@ const useStyles = makeStyles({
     fontWeight: 600,
     marginTop: "2px",
   },
-  envBadge: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
 });
 
 export function Topbar() {
@@ -126,7 +123,6 @@ export function Topbar() {
   const { principal } = usePrincipal();
   const workspaces = useMyWorkspaces();
   const logout = useLogout();
-  const env = process.env.NEXT_PUBLIC_PLOWERED_ENV ?? "dev";
   const [query, setQuery] = useState("");
 
   const onSignOut = async () => {
@@ -231,25 +227,6 @@ export function Topbar() {
             </MenuList>
           </MenuPopover>
         </Menu>
-
-        {/* Environment badge — yellow in non-prod, red in prod. Read-only. */}
-        <Tooltip
-          content={
-            env === "production"
-              ? "Production environment"
-              : `${env} environment (non-production)`
-          }
-          relationship="label"
-        >
-          <Badge
-            appearance="tint"
-            color={env === "production" ? "danger" : "warning"}
-            className={styles.envBadge}
-            size="small"
-          >
-            {env}
-          </Badge>
-        </Tooltip>
 
         {/* User identity + dropdown */}
         <Menu>
