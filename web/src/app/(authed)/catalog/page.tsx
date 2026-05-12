@@ -186,10 +186,10 @@ export default function CatalogPage() {
           <Link
             href={`/asset/${encodeURIComponent(item.qualified_name)}`}
             className={styles.rowName}
-            style={{ display: "block", minWidth: 0, maxWidth: "100%" }}
+            style={{ minWidth: 0, maxWidth: "100%" }}
           >
-            <Truncate text={item.name} style={{ fontWeight: 600 }} />
-            <Truncate text={item.qualified_name} className={styles.mono} />
+            <Truncate text={item.name} style={{ display: "block", fontWeight: 600 }} />
+            <Truncate text={item.qualified_name} className={styles.mono} style={{ display: "block" }} />
           </Link>
         ),
       }),

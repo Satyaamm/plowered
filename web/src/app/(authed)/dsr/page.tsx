@@ -31,6 +31,7 @@ import { useCreateDSR, useDSRRequests, useUpdateDSRStatus } from "@/lib/hooks";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
+import { Truncate } from "@/components/truncate";
 
 const TYPES = ["access", "portability", "rectification", "erasure", "restriction"];
 const STATUS = ["received", "processing", "completed", "rejected"];
@@ -182,8 +183,10 @@ export default function DSRPage() {
                           {r.Status}
                         </Badge>
                       </TableCell>
-                      <TableCell><span className={styles.mono}>{r.Type}</span></TableCell>
-                      <TableCell><span className={styles.mono}>{r.SubjectID}</span></TableCell>
+                      <TableCell style={{ width: 130 }}><span className={styles.mono}>{r.Type}</span></TableCell>
+                      <TableCell style={{ maxWidth: 260 }}>
+                        <Truncate text={r.SubjectID} className={styles.mono} />
+                      </TableCell>
                       <TableCell>
                         <Text size={200}>{new Date(r.ReceivedAt).toLocaleString()}</Text>
                       </TableCell>

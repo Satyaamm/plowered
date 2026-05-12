@@ -21,6 +21,7 @@ import { useDeleted, usePrincipal, usePurgeRecord, useRestoreRecord } from "@/li
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
 import { PageHeader } from "@/components/page-header";
+import { Truncate } from "@/components/truncate";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "20px" },
@@ -108,17 +109,15 @@ export default function DeletedPage() {
           <TableBody>
             {pageRows.map((rec) => (
               <TableRow key={rec.ID}>
-                <TableCell className={styles.mono}>{rec.ResourceType}</TableCell>
-                <TableCell className={styles.mono}>
-                  {rec.ResourceID.slice(0, 12)}
+                <TableCell style={{ width: 110 }} className={styles.mono}>{rec.ResourceType}</TableCell>
+                <TableCell style={{ maxWidth: 200 }}>
+                  <Truncate text={rec.ResourceID} className={styles.mono} />
                 </TableCell>
-                <TableCell>
-                  <Text className={styles.meta}>
-                    {rec.DeletedKind}:{rec.DeletedBy || "—"}
-                  </Text>
+                <TableCell style={{ maxWidth: 220 }}>
+                  <Truncate text={`${rec.DeletedKind}:${rec.DeletedBy || "—"}`} className={styles.meta} />
                 </TableCell>
-                <TableCell>
-                  <Text className={styles.meta}>{rec.DeletionReason}</Text>
+                <TableCell style={{ maxWidth: 280 }}>
+                  <Truncate text={rec.DeletionReason} className={styles.meta} />
                 </TableCell>
                 <TableCell>
                   <Text className={styles.meta}>

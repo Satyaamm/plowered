@@ -20,6 +20,7 @@ import { useAuditFeed, type AuditEvent } from "@/lib/hooks";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
 import { PageHeader } from "@/components/page-header";
+import { Truncate } from "@/components/truncate";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "20px" },
@@ -155,20 +156,22 @@ export default function AuditPage() {
               <TableBody>
                 {pageRows.map((e) => (
                   <TableRow key={e.event_id}>
-                    <TableCell>
+                    <TableCell style={{ width: 180 }}>
                       <Text className={styles.meta}>
                         {new Date(e.created_at).toLocaleString()}
                       </Text>
                     </TableCell>
-                    <TableCell className={styles.mono}>
-                      {e.actor_kind}:{e.actor_id || "—"}
+                    <TableCell style={{ maxWidth: 220 }}>
+                      <Truncate text={`${e.actor_kind}:${e.actor_id || "—"}`} className={styles.mono} />
                     </TableCell>
-                    <TableCell className={styles.mono}>{e.action}</TableCell>
-                    <TableCell className={styles.mono}>
-                      {e.resource_type}/{e.resource_id || "—"}
+                    <TableCell style={{ maxWidth: 240 }}>
+                      <Truncate text={e.action} className={styles.mono} />
                     </TableCell>
-                    <TableCell>
-                      <Text className={styles.meta}>{e.request_id ?? ""}</Text>
+                    <TableCell style={{ maxWidth: 280 }}>
+                      <Truncate text={`${e.resource_type}/${e.resource_id || "—"}`} className={styles.mono} />
+                    </TableCell>
+                    <TableCell style={{ maxWidth: 200 }}>
+                      <Truncate text={e.request_id ?? ""} className={styles.meta} />
                     </TableCell>
                   </TableRow>
                 ))}

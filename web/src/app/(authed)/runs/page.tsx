@@ -18,6 +18,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
 import { PageHeader } from "@/components/page-header";
+import { Truncate } from "@/components/truncate";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "24px" },
@@ -106,8 +107,8 @@ export default function RunsPage() {
                 <TableCell>
                   <StatusBadge variant="run" status={r.Status} />
                 </TableCell>
-                <TableCell>
-                  <Text className={styles.meta}>{r.TriggeredBy ?? ""}</Text>
+                <TableCell style={{ maxWidth: 220 }}>
+                  <Truncate text={r.TriggeredBy ?? ""} className={styles.meta} />
                 </TableCell>
                 <TableCell>
                   <Text className={styles.meta}>

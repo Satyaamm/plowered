@@ -33,6 +33,7 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
+import { Truncate } from "@/components/truncate";
 
 const useStyles = makeStyles({
   body: { display: "flex", flexDirection: "column", gap: "16px" },
@@ -175,13 +176,18 @@ export default function LegalHoldsPage() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell>{h.Matter}</TableCell>
-                      <TableCell>
-                        <span className={styles.scope}>
-                          {Object.keys(h.Scope ?? {}).length === 0
-                            ? "tenant-wide"
-                            : JSON.stringify(h.Scope)}
-                        </span>
+                      <TableCell style={{ maxWidth: 260 }}>
+                        <Truncate text={h.Matter} />
+                      </TableCell>
+                      <TableCell style={{ maxWidth: 280 }}>
+                        <Truncate
+                          text={
+                            Object.keys(h.Scope ?? {}).length === 0
+                              ? "tenant-wide"
+                              : JSON.stringify(h.Scope)
+                          }
+                          className={styles.scope}
+                        />
                       </TableCell>
                       <TableCell>
                         <Text size={200}>
