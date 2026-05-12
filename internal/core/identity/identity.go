@@ -80,6 +80,10 @@ type User struct {
 	LockedAt        time.Time
 	LockedReason    string
 	EmailVerifiedAt time.Time
+	// TourCompletedAt is set when the user dismisses or finishes the
+	// in-app product tour. While it's zero, the web shell auto-
+	// launches the tour on every authenticated load.
+	TourCompletedAt time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -243,6 +247,9 @@ type Repo interface {
 	// retention (GDPR Art. 17(3)(b) — compliance with a legal
 	// obligation).
 	PseudonymiseUser(ctx context.Context, userID, stubEmail string, at time.Time) error
+	// SetTourCompleted writes a non-zero `at` to clear the auto-launch
+	// flag; passing time.Time{} resets it so the tour fires again.
+	SetTourCompleted(ctx context.Context, userID string, at time.Time) error
 
 	// Memberships
 	CreateMembership(ctx context.Context, m *Membership) error

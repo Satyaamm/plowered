@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { RequireAuth } from "@/components/require-auth";
+import { ProductTour } from "@/components/product-tour";
 
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "plowered";
 
@@ -18,6 +19,7 @@ export default function AuthedLayout({ children }: { children: React.ReactNode }
             {children}
           </main>
         </div>
+        <ProductTour />
       </div>
     </RequireAuth>
   );

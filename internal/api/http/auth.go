@@ -93,14 +93,19 @@ type loginResp struct {
 }
 
 type meResp struct {
-	UserID       string   `json:"user_id"`
-	TenantID     string   `json:"tenant_id"`
-	TenantName   string   `json:"tenant_name"`
-	TenantSlug   string   `json:"tenant_slug"`
-	Email        string   `json:"email"`
-	FullName     string   `json:"full_name"`
-	Roles        []string `json:"roles"`
-	Verified     bool     `json:"email_verified"`
+	UserID         string `json:"user_id"`
+	TenantID       string `json:"tenant_id"`
+	TenantName     string `json:"tenant_name"`
+	TenantSlug     string `json:"tenant_slug"`
+	Email          string `json:"email"`
+	FullName       string `json:"full_name"`
+	Roles          []string `json:"roles"`
+	Verified       bool   `json:"email_verified"`
+	// TourCompleted is true once the user has finished or dismissed
+	// the product tour at least once. The web shell uses this to
+	// decide whether to auto-launch the tour on first authenticated
+	// load.
+	TourCompleted  bool   `json:"tour_completed"`
 }
 
 // ----- handlers -----
@@ -404,14 +409,15 @@ func meHandler(d AuthDeps) http.HandlerFunc {
 			tenantSlug = t.Slug
 		}
 		writeJSON(w, http.StatusOK, meResp{
-			UserID:     p.ID,
-			TenantID:   p.TenantID,
-			TenantName: tenantName,
-			TenantSlug: tenantSlug,
-			Email:      u.Email,
-			FullName:   u.FullName,
-			Roles:      p.Roles,
-			Verified:   u.IsEmailVerified(),
+			UserID:        p.ID,
+			TenantID:      p.TenantID,
+			TenantName:    tenantName,
+			TenantSlug:    tenantSlug,
+			Email:         u.Email,
+			FullName:      u.FullName,
+			Roles:         p.Roles,
+			Verified:      u.IsEmailVerified(),
+			TourCompleted: !u.TourCompletedAt.IsZero(),
 		})
 	}
 }

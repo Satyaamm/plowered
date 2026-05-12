@@ -18,6 +18,7 @@ export function usePrincipal() {
         fullName: data.full_name,
         roles: data.roles ?? [],
         verified: data.email_verified,
+        tourCompleted: data.tour_completed,
       },
       loading: false,
       authenticated: true as const,

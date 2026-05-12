@@ -22,6 +22,7 @@ import {
   PlugConnected20Regular,
   Sparkle20Regular,
   BookOpen20Regular,
+  PlayCircle20Regular,
   ChevronDown16Regular,
   CheckmarkCircle16Filled,
   SignOut20Regular,
@@ -158,6 +159,7 @@ export function Topbar() {
           value={query}
           onChange={(_, d) => setQuery(d.value)}
           onKeyDown={onSearchKey}
+          data-tour="topbar-search"
         />
       </div>
 
@@ -170,6 +172,7 @@ export function Topbar() {
               className={styles.wsButton}
               aria-label="Switch workspace"
               title="Switch workspace"
+              data-tour="topbar-workspace"
             >
               <Building20Regular />
               <span className={styles.wsName}>{wsName}</span>
@@ -231,7 +234,7 @@ export function Topbar() {
         {/* User identity + dropdown */}
         <Menu>
           <MenuTrigger disableButtonEnhancement>
-            <button type="button" className={styles.identity} aria-label="Account menu">
+            <button type="button" className={styles.identity} aria-label="Account menu" data-tour="topbar-user">
               <Avatar
                 color="brand"
                 initials={initials}
@@ -292,6 +295,12 @@ export function Topbar() {
                 onClick={() => window.open("/docs", "_blank")}
               >
                 API docs
+              </MenuItem>
+              <MenuItem
+                icon={<PlayCircle20Regular />}
+                onClick={() => window.__plowered_tour?.()}
+              >
+                Take the product tour
               </MenuItem>
               <MenuDivider />
               <MenuItem

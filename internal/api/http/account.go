@@ -25,6 +25,40 @@ func accountHandlers(mux *http.ServeMux, d AuthDeps) {
 	mux.HandleFunc("GET /v1/account/sessions", listSessionsHandler(d))
 	mux.HandleFunc("DELETE /v1/account/sessions", revokeAllSessionsHandler(d))
 	mux.HandleFunc("DELETE /v1/account/sessions/{id}", revokeOneSessionHandler(d))
+	// Product-tour state. Complete stamps tour_completed_at = NOW();
+	// Reset clears it so the auto-launch fires again next sign-in.
+	mux.HandleFunc("POST /v1/account/tour:complete", tourCompleteHandler(d))
+	mux.HandleFunc("POST /v1/account/tour:reset", tourResetHandler(d))
+}
+
+func tourCompleteHandler(d AuthDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		pr, ok := principalFrom(r)
+		if !ok || pr.ID == "" {
+			writeJSON(w, http.StatusUnauthorized, errorBody{"unauthorized", "authentication required"})
+			return
+		}
+		if err := d.Identity.SetTourCompleted(r.Context(), pr.ID, time.Now().UTC()); err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"tour_completed": true})
+	}
+}
+
+func tourResetHandler(d AuthDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		pr, ok := principalFrom(r)
+		if !ok || pr.ID == "" {
+			writeJSON(w, http.StatusUnauthorized, errorBody{"unauthorized", "authentication required"})
+			return
+		}
+		if err := d.Identity.SetTourCompleted(r.Context(), pr.ID, time.Time{}); err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"tour_completed": false})
+	}
 }
 
 type updateProfileReq struct {

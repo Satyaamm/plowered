@@ -350,6 +350,17 @@ func (m *MemoryRepo) UnlockUser(_ context.Context, userID string) error {
 	return nil
 }
 
+func (m *MemoryRepo) SetTourCompleted(_ context.Context, userID string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u, ok := m.users[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	u.TourCompletedAt = at
+	return nil
+}
+
 func (m *MemoryRepo) PseudonymiseUser(_ context.Context, userID, stubEmail string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

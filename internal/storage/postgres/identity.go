@@ -163,6 +163,7 @@ const selectUserSQL = `
 	       COALESCE(locked_at, '0001-01-01 00:00:00+00'::timestamptz),
 	       locked_reason,
 	       COALESCE(email_verified_at, '0001-01-01 00:00:00+00'::timestamptz),
+	       COALESCE(tour_completed_at, '0001-01-01 00:00:00+00'::timestamptz),
 	       created_at, updated_at
 	  FROM users`
 
@@ -173,7 +174,7 @@ func scanUser(row rowScanner) (*identity.User, error) {
 		&u.FirstName, &u.LastName, &u.Phone, &u.PhoneCountry,
 		&u.AvatarURL, &u.Status, &u.PasswordHash,
 		&u.MFAEnrolled, &u.LastLoginAt, &u.LastLoginIP, &u.LockedAt, &u.LockedReason,
-		&u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.EmailVerifiedAt, &u.TourCompletedAt, &u.CreatedAt, &u.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, identity.ErrNotFound
@@ -502,6 +503,25 @@ func (s *IdentityStore) LockUser(ctx context.Context, userID, reason string, at 
 		userID, at, reason)
 	if err != nil {
 		return fmt.Errorf("identity: lock user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return identity.ErrNotFound
+	}
+	return nil
+}
+
+func (s *IdentityStore) SetTourCompleted(ctx context.Context, userID string, at time.Time) error {
+	var atArg any
+	if at.IsZero() {
+		atArg = nil
+	} else {
+		atArg = at
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE users SET tour_completed_at = $2, updated_at = NOW()
+		 WHERE id = $1::uuid`, userID, atArg)
+	if err != nil {
+		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return identity.ErrNotFound

@@ -16,6 +16,7 @@ export interface Me {
   full_name: string;
   roles: string[];
   email_verified: boolean;
+  tour_completed: boolean;
 }
 
 // One row from GET /v1/workspaces/mine.
@@ -86,6 +87,24 @@ export function useMyWorkspaces() {
       return d.workspaces ?? [];
     },
     staleTime: 60_000,
+  });
+}
+
+export function useCompleteTour() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      call<{ tour_completed: boolean }>("POST", "/v1/account/tour:complete"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ME_KEY }),
+  });
+}
+
+export function useResetTour() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      call<{ tour_completed: boolean }>("POST", "/v1/account/tour:reset"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ME_KEY }),
   });
 }
 

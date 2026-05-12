@@ -36,6 +36,10 @@ type Item = {
   label: string;
   href: string;
   icon: React.ReactNode;
+  // Tour selector — referenced by the product-tour steps. Optional;
+  // not every item needs a tour stop, but the ones the new-user
+  // walkthrough highlights do.
+  tour?: string;
 };
 
 type Group = {
@@ -47,54 +51,54 @@ const GROUPS: Group[] = [
   {
     heading: "GENERAL",
     items: [
-      { label: "Home",       href: "/",        icon: <Home24Regular /> },
-      { label: "Search",     href: "/search",  icon: <Search24Regular /> },
+      { label: "Home",       href: "/",        icon: <Home24Regular />,   tour: "nav-home" },
+      { label: "Search",     href: "/search",  icon: <Search24Regular />, tour: "nav-search" },
     ],
   },
   {
     heading: "CATALOG",
     items: [
-      { label: "Assets",     href: "/catalog", icon: <Database24Regular /> },
+      { label: "Assets",     href: "/catalog", icon: <Database24Regular />, tour: "nav-assets" },
     ],
   },
   {
     heading: "ORCHESTRATION",
     items: [
-      { label: "Pipelines",  href: "/pipelines", icon: <Flow24Regular /> },
-      { label: "Runs",       href: "/runs",      icon: <History24Regular /> },
+      { label: "Pipelines",  href: "/pipelines", icon: <Flow24Regular />,    tour: "nav-pipelines" },
+      { label: "Runs",       href: "/runs",      icon: <History24Regular />, tour: "nav-runs" },
     ],
   },
   {
     heading: "DATA QUALITY",
     items: [
-      { label: "Checks",     href: "/checks", icon: <CheckmarkCircle24Regular /> },
-      { label: "Alerts",     href: "/alerts", icon: <Alert24Regular /> },
+      { label: "Checks",     href: "/checks", icon: <CheckmarkCircle24Regular />, tour: "nav-checks" },
+      { label: "Alerts",     href: "/alerts", icon: <Alert24Regular />,            tour: "nav-alerts" },
     ],
   },
   {
     heading: "GOVERNANCE",
     items: [
-      { label: "Policies",   href: "/admin/policies", icon: <Shield24Regular /> },
-      { label: "Glossary",   href: "/glossary",       icon: <Document24Regular /> },
-      { label: "Access",     href: "/access",         icon: <Eye24Regular /> },
+      { label: "Policies",   href: "/admin/policies", icon: <Shield24Regular />,   tour: "nav-policies" },
+      { label: "Glossary",   href: "/glossary",       icon: <Document24Regular />, tour: "nav-glossary" },
+      { label: "Access",     href: "/access",         icon: <Eye24Regular />,      tour: "nav-access" },
     ],
   },
   {
     heading: "COMPLIANCE",
     items: [
-      { label: "Audit log",     href: "/admin/audit",   icon: <Eye24Regular /> },
-      { label: "Recycle bin",   href: "/admin/deleted", icon: <Delete24Regular /> },
-      { label: "Legal holds",   href: "/legal-holds",   icon: <Gavel24Regular /> },
-      { label: "DSR requests",  href: "/dsr",           icon: <ShieldKeyhole24Regular /> },
+      { label: "Audit log",     href: "/admin/audit",   icon: <Eye24Regular />,           tour: "nav-audit" },
+      { label: "Recycle bin",   href: "/admin/deleted", icon: <Delete24Regular />,        tour: "nav-deleted" },
+      { label: "Legal holds",   href: "/legal-holds",   icon: <Gavel24Regular />,         tour: "nav-holds" },
+      { label: "DSR requests",  href: "/dsr",           icon: <ShieldKeyhole24Regular />, tour: "nav-dsr" },
     ],
   },
   {
     heading: "MANAGEMENT",
     items: [
-      { label: "Connections",  href: "/connections", icon: <Settings24Regular /> },
-      { label: "Team",         href: "/team",        icon: <People24Regular /> },
+      { label: "Connections",  href: "/connections", icon: <Settings24Regular />, tour: "nav-connections" },
+      { label: "Team",         href: "/team",        icon: <People24Regular />,   tour: "nav-team" },
       { label: "Identity",     href: "/identity",    icon: <Person24Regular /> },
-      { label: "AI providers", href: "/settings/ai", icon: <Sparkle24Regular /> },
+      { label: "AI providers", href: "/settings/ai", icon: <Sparkle24Regular />,  tour: "nav-ai" },
       { label: "Account",      href: "/account",     icon: <Person24Regular /> },
     ],
   },
@@ -196,6 +200,7 @@ export function Sidebar({ appName }: { appName: string }) {
       className={styles.root}
       style={{ width: collapsed ? 64 : 240 }}
       aria-label="Primary navigation"
+      data-tour="sidebar"
     >
       <div className={styles.brand}>
         <span className={styles.brandDot} />
@@ -219,6 +224,7 @@ export function Sidebar({ appName }: { appName: string }) {
                   href={it.href}
                   className={mergeClasses(styles.link, active && styles.linkActive)}
                   title={collapsed ? it.label : undefined}
+                  data-tour={it.tour}
                 >
                   <span
                     className={mergeClasses(
