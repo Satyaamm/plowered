@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Badge,
   Button,
@@ -77,12 +78,13 @@ function healthBadge(h: Connection["health"]) {
     case "unreachable":
       return <Badge appearance="filled" color="danger">unreachable</Badge>;
     default:
-      return <Badge appearance="outline" color="subtle">unknown</Badge>;
+      return <Badge appearance="tint" color="subtle">unknown</Badge>;
   }
 }
 
 export default function ConnectionsPage() {
   const styles = useStyles();
+  const router = useRouter();
   const list = useConnections();
   const test = useTestConnection();
   const del = useDeleteConnection();
@@ -181,7 +183,7 @@ export default function ConnectionsPage() {
               <MenuPopover>
                 <MenuList>
                   <MenuItem
-                    onClick={() => classify.mutate(item.id)}
+                    onClick={() => router.push(`/classify/${item.id}`)}
                   >
                     Classify (sample data)
                   </MenuItem>
@@ -198,7 +200,7 @@ export default function ConnectionsPage() {
         ),
       }),
     ],
-    [styles, test, del, crawl, classify],
+    [styles, test, del, crawl, router],
   );
 
   return (

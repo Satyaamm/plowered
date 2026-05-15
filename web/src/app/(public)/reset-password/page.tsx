@@ -14,6 +14,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { AuthShell } from "@/components/auth-shell";
+import { InfoLabel } from "@/components/info-label";
 import { useResetPassword } from "@/lib/auth-client";
 
 const useStyles = makeStyles({
@@ -65,7 +66,14 @@ function ResetInner() {
       subtitle="8+ chars with at least three of: lowercase, uppercase, digit, symbol."
     >
       <form className={styles.form} onSubmit={submit} noValidate>
-        <Field label="New password" required>
+        <Field
+          label={
+            <InfoLabel info="Hashed with Argon2id — never stored in plaintext. 8+ chars with 3 of: lowercase, uppercase, digit, symbol. Resetting signs you out of every other device immediately.">
+              New password
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type="password"
             autoComplete="new-password"
@@ -75,7 +83,14 @@ function ResetInner() {
             disabled={reset.isPending}
           />
         </Field>
-        <Field label="Confirm new password" required>
+        <Field
+          label={
+            <InfoLabel info="Re-enter the new password exactly. The submit button stays disabled until both fields match — guards against typos that would otherwise lock you out.">
+              Confirm new password
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type="password"
             autoComplete="new-password"

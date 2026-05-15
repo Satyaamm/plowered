@@ -46,6 +46,7 @@ export function useRestoreRecord() {
   return useMutation({
     mutationFn: (id: string) => call<{ status: string }>("POST", `/v1/deleted/${id}/restore`),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "Record restored" },
   });
 }
 
@@ -54,5 +55,6 @@ export function usePurgeRecord() {
   return useMutation({
     mutationFn: (id: string) => call<void>("DELETE", `/v1/deleted/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "Record permanently purged" },
   });
 }

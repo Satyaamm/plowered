@@ -39,8 +39,11 @@ export interface AccessRequest {
  * the policy engine, returning two slices for the UI to render.
  */
 export function useAccessPreview() {
+  // Silent — the result is the rendered visible/denied lists themselves;
+  // a toast on every "Preview" click would duplicate the inline outcome.
   return useMutation({
     mutationFn: (req: AccessRequest) =>
       call<AccessPreview>("POST", "/v1/access/preview", req),
+    meta: { silent: true },
   });
 }

@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
   MiniMap,
+  Position,
   ReactFlow,
   ReactFlowProvider,
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  useReactFlow,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -31,12 +33,14 @@ import {
   MessageBar,
   MessageBarBody,
   Subtitle2,
+  Switch,
   Textarea,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import {
   Add20Regular,
+  AutoFitHeight20Regular,
   Code20Regular,
   Database20Regular,
   Delete20Regular,
@@ -44,7 +48,9 @@ import {
   DocumentBulletList20Regular,
   Flow20Regular,
   Globe20Regular,
+  Layer20Regular,
 } from "@fluentui/react-icons";
+import { InfoLabel } from "@/components/info-label";
 import type { Task, TaskType } from "@/lib/types-orchestration";
 
 // PALETTE describes the task types a user can drop into the DAG.
@@ -65,39 +71,6 @@ const PALETTE: {
 
 const HORIZONTAL_GAP = 240;
 const VERTICAL_GAP = 110;
-
-// -------- topological layout (matches the runner's BFS) --------
-function topoLevels(tasks: Task[]): string[][] {
-  const indeg = new Map<string, number>();
-  const out = new Map<string, string[]>();
-  for (const t of tasks) {
-    indeg.set(t.ID, (t.DependsOn ?? []).length);
-    out.set(t.ID, []);
-  }
-  for (const t of tasks) {
-    for (const d of t.DependsOn ?? []) {
-      out.get(d)?.push(t.ID);
-    }
-  }
-  const levels: string[][] = [];
-  let frontier = tasks
-    .filter((t) => (indeg.get(t.ID) ?? 0) === 0)
-    .map((t) => t.ID)
-    .sort();
-  while (frontier.length) {
-    levels.push(frontier);
-    const next: string[] = [];
-    for (const id of frontier) {
-      for (const child of out.get(id) ?? []) {
-        const remaining = (indeg.get(child) ?? 0) - 1;
-        indeg.set(child, remaining);
-        if (remaining === 0) next.push(child);
-      }
-    }
-    frontier = next.sort();
-  }
-  return levels;
-}
 
 // detectCycle returns the set of node IDs on a cycle (empty if DAG).
 // Cheap variant of Tarjan's: BFS-based topo sort drops everything that
@@ -135,34 +108,108 @@ function detectCycle(tasks: Task[]): Set<string> {
   return stuck;
 }
 
-// -------- task → React Flow node, edges from DependsOn --------
-function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
-  const levels = topoLevels(tasks);
-  const positions = new Map<string, { x: number; y: number }>();
-  levels.forEach((level, col) => {
-    level.forEach((id, row) => {
-      positions.set(id, {
-        x: col * HORIZONTAL_GAP,
-        y: row * VERTICAL_GAP - ((level.length - 1) * VERTICAL_GAP) / 2,
-      });
-    });
-  });
-  // Anything stuck in a cycle has no level — push it into a column off
-  // to the right with a red border.
-  let strayCol = levels.length;
-  for (const t of tasks) {
-    if (!positions.has(t.ID)) {
-      positions.set(t.ID, { x: strayCol * HORIZONTAL_GAP, y: 0 });
-      strayCol++;
+// ADF-style placement: every new node lands just to the right of the
+// rightmost existing one, at the same y. On an empty canvas the first
+// node lands at a fixed visible spot. The viewport auto-fits after
+// each add so users never have to pan to find what they just added.
+function nextNodePositionFromNodes(
+  added: Node[],
+  existing: Node[],
+): { x: number; y: number } {
+  const all = [...added, ...existing];
+  if (all.length === 0) return { x: 60, y: 60 };
+  let bestX = -Infinity;
+  let anchorY = 60;
+  for (const n of all) {
+    if (n.position.x > bestX) {
+      bestX = n.position.x;
+      anchorY = n.position.y;
     }
   }
+  if (bestX === -Infinity) return { x: 60, y: 60 };
+  return { x: bestX + HORIZONTAL_GAP, y: anchorY };
+}
 
+// Cheap probes into a node's data/style to decide whether it needs
+// rebuilding during the tasks → nodes reconciliation. The encoding
+// matches what buildFlow() emits.
+function getNodeCycleFlag(n: Node): boolean {
+  const bg = (n.style as { background?: string } | undefined)?.background;
+  return bg === "#FFE9E5";
+}
+function getNodeTaskType(n: Node): string | undefined {
+  return (n.data as { taskType?: string } | undefined)?.taskType;
+}
+
+// Topological auto-arrange (left → right). Each level becomes a column;
+// nodes within a level stack vertically and are centred around y=0 so
+// fitView frames the whole graph nicely.
+function autoArrangePositions(tasks: Task[]): Record<string, { x: number; y: number }> {
+  const indeg = new Map<string, number>();
+  const out = new Map<string, string[]>();
+  for (const t of tasks) {
+    indeg.set(t.ID, (t.DependsOn ?? []).length);
+    out.set(t.ID, []);
+  }
+  for (const t of tasks) {
+    for (const d of t.DependsOn ?? []) out.get(d)?.push(t.ID);
+  }
+  const levels: string[][] = [];
+  let frontier = tasks
+    .filter((t) => (indeg.get(t.ID) ?? 0) === 0)
+    .map((t) => t.ID)
+    .sort();
+  while (frontier.length) {
+    levels.push(frontier);
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const child of out.get(id) ?? []) {
+        const r = (indeg.get(child) ?? 0) - 1;
+        indeg.set(child, r);
+        if (r === 0) next.push(child);
+      }
+    }
+    frontier = next.sort();
+  }
+  // Cycle nodes (anything left over): drop into a column to the right.
+  const seen = new Set(levels.flat());
+  const stray = tasks.filter((t) => !seen.has(t.ID)).map((t) => t.ID);
+  if (stray.length) levels.push(stray);
+
+  const out2: Record<string, { x: number; y: number }> = {};
+  levels.forEach((col, ci) => {
+    col.forEach((id, ri) => {
+      out2[id] = {
+        x: 60 + ci * HORIZONTAL_GAP,
+        y: 60 + ri * VERTICAL_GAP - ((col.length - 1) * VERTICAL_GAP) / 2,
+      };
+    });
+  });
+  return out2;
+}
+
+// Build React Flow nodes + edges. Position comes from the persisted
+// state — buildFlow never falls back to a synthetic position, callers
+// must seed positions before passing tasks in.
+function buildFlow(
+  tasks: Task[],
+  positions: Record<string, { x: number; y: number }>,
+  cycleNodes: Set<string>,
+): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = tasks.map((t) => {
     const onCycle = cycleNodes.has(t.ID);
     return {
       id: t.ID,
-      position: positions.get(t.ID) ?? { x: 0, y: 0 },
+      position: positions[t.ID] ?? { x: 60, y: 60 },
+      // ADF flows left → right: handles on the left (input) and right
+      // (output) edges of each card.
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       data: {
+        // taskType is read by the reconciler to decide whether the
+        // node needs rebuilding (Type changes are rare; positions
+        // change every drag frame).
+        taskType: t.Type,
         label: (
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <span style={{ fontSize: 12, fontWeight: 700 }}>{t.ID}</span>
@@ -171,11 +218,12 @@ function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
         ),
       },
       style: {
-        background: onCycle ? "#FFE9E5" : "#FAFAFA",
+        background: onCycle ? "#FFE9E5" : "#FFFFFF",
         border: `1.5px solid ${onCycle ? "#C03B2C" : "#F38020"}`,
-        borderRadius: 6,
+        borderRadius: 8,
         padding: "10px 14px",
         width: 200,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
       },
     };
   });
@@ -185,8 +233,13 @@ function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
       id: `${src}->${t.ID}`,
       source: src,
       target: t.ID,
-      style: { stroke: "#F38020", strokeWidth: 1.5 },
+      style: { stroke: "#F38020", strokeWidth: 1.75 },
       type: "smoothstep",
+      // animated=true triggers xyflow's built-in "marching ants"
+      // stroke-dashoffset animation — solid path becomes a dashed line
+      // flowing in the direction of the dependency. Matches ADF's
+      // live-pipeline edge style.
+      animated: true,
     })),
   );
   return { nodes, edges };
@@ -194,25 +247,41 @@ function tasksToFlow(tasks: Task[], cycleNodes: Set<string>) {
 
 // -------- Editor --------
 const useStyles = makeStyles({
+  // Outer card: rounded box with a 1px outline. Inside it three rows
+  // stack vertically: top bar (full width) → palette + canvas (+ drawer)
+  // grid → hint bar (full width). Mirrors ADF's pipeline-editor chrome.
+  editor: {
+    display: "flex",
+    flexDirection: "column",
+    backgroundColor: tokens.colorNeutralBackground1,
+    boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
+    borderRadius: "8px",
+    overflow: "hidden",
+    height: "640px",
+  },
+  topBar: {
+    padding: "10px 16px",
+    minHeight: "48px",
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    backgroundColor: tokens.colorNeutralBackground2,
+    borderBottomWidth: "1px",
+    borderBottomStyle: "solid",
+    borderBottomColor: tokens.colorNeutralStroke2,
+  },
   shell: {
     display: "grid",
-    // gridTemplateColumns is set inline below — switches to a 3-col
-    // layout when the task drawer is open so the canvas stays
-    // visible AND interactive next to the panel (inline drawer
-    // pattern, not an overlay).
-    gap: "12px",
-    height: "560px",
-  },
-  drawer: {
-    boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
-    borderRadius: "6px",
-    overflow: "hidden",
-    backgroundColor: tokens.colorNeutralBackground1,
+    flex: 1,
+    minHeight: 0,
+    // gridTemplateColumns set inline — 3-col when the task drawer is
+    // open, 2-col otherwise. Keeps the canvas always interactive.
   },
   palette: {
     backgroundColor: tokens.colorNeutralBackground1,
-    boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
-    borderRadius: "6px",
+    borderRightWidth: "1px",
+    borderRightStyle: "solid",
+    borderRightColor: tokens.colorNeutralStroke2,
     padding: "12px",
     display: "flex",
     flexDirection: "column",
@@ -233,18 +302,32 @@ const useStyles = makeStyles({
   },
   canvas: {
     backgroundColor: tokens.colorNeutralBackground1,
-    boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
-    borderRadius: "6px",
     overflow: "hidden",
+    minWidth: 0,
   },
-  toolbar: {
-    padding: "8px 12px",
+  drawer: {
+    borderLeftWidth: "1px",
+    borderLeftStyle: "solid",
+    borderLeftColor: tokens.colorNeutralStroke2,
+    overflow: "hidden",
+    backgroundColor: tokens.colorNeutralBackground1,
+  },
+  toolbarDivider: {
+    width: "1px",
+    height: "20px",
+    backgroundColor: tokens.colorNeutralStroke2,
+    margin: "0 4px",
+  },
+  hintBar: {
+    padding: "6px 12px",
+    fontSize: "11px",
+    color: tokens.colorNeutralForeground3,
+    borderTopWidth: "1px",
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorNeutralStroke2,
+    backgroundColor: tokens.colorNeutralBackground2,
     display: "flex",
-    gap: "8px",
-    alignItems: "center",
-    borderBottomWidth: "1px",
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorNeutralStroke2,
+    gap: "16px",
   },
   drawerSection: { display: "flex", flexDirection: "column", gap: "12px" },
   drawerCode: {
@@ -266,37 +349,101 @@ export interface DAGEditorProps {
 //
 // Cycles are highlighted red and prevent saving (validation happens at
 // the parent component on submit).
-export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
+// Public wrapper — provides the React Flow context so the inner
+// component (and the palette + toolbar that live next to ReactFlow,
+// not inside it) can use `useReactFlow()` for fitView / viewport ops.
+export function DAGEditor(props: DAGEditorProps) {
+  return (
+    <ReactFlowProvider>
+      <DAGEditorInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function DAGEditorInner({ tasks, onChange }: DAGEditorProps) {
   const styles = useStyles();
+  const rf = useReactFlow();
   const [selectedID, setSelectedID] = useState<string | null>(null);
+  const [configMode, setConfigMode] = useState(false);
+  // Tracks whether we've run the initial mount-time fitView so it
+  // doesn't fire on every render with non-empty tasks.
+  const didInitialFit = useRef(false);
 
   const cycleNodes = useMemo(() => detectCycle(tasks), [tasks]);
-  const flow = useMemo(() => tasksToFlow(tasks, cycleNodes), [tasks, cycleNodes]);
 
-  // React Flow drives node/edge state via callbacks; we keep the DAG
-  // truth in our `tasks` prop. Position-only changes are dropped (we
-  // recompute from topo levels), but selection + delete are honoured.
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      let next = tasks;
-      for (const c of changes) {
-        if (c.type === "remove") {
-          next = next.filter((t) => t.ID !== c.id);
-          // also drop any DependsOn references
-          next = next.map((t) => ({
-            ...t,
-            DependsOn: (t.DependsOn ?? []).filter((d) => d !== c.id),
-          }));
-        }
-        if (c.type === "select") {
-          if (c.selected) setSelectedID(c.id);
+  // ────────────────────────────────────────────────────────────────
+  // Controlled-flow state per xyflow docs.
+  //
+  // The old useMemo(buildFlow(tasks, positions, …)) pattern caused
+  // node *flicker* during drag: every position event triggered a
+  // setState → re-render → buildFlow rebuilt every node with brand-
+  // new `data` and `style` objects, which restarted React Flow's CSS
+  // transitions. By keeping nodes/edges in useState and mutating only
+  // the moved node's `position` field via applyNodeChanges, other
+  // nodes keep their object identity and don't repaint.
+  // ────────────────────────────────────────────────────────────────
+  const [nodes, setNodes] = useState<Node[]>(() => buildFlow(tasks, {}, cycleNodes).nodes);
+  const [edges, setEdges] = useState<Edge[]>(() => buildFlow(tasks, {}, cycleNodes).edges);
+
+  // Reconcile nodes whenever tasks (add/remove/rename) or cycle
+  // membership change. Preserves the position of any node that's
+  // already in state — only the deltas get fresh objects.
+  useEffect(() => {
+    setNodes((current) => {
+      const byID = new Map(current.map((n) => [n.id, n] as const));
+      const next: Node[] = [];
+      for (let i = 0; i < tasks.length; i++) {
+        const t = tasks[i];
+        const onCycle = cycleNodes.has(t.ID);
+        const existing = byID.get(t.ID);
+        const position =
+          existing?.position ?? nextNodePositionFromNodes(next, current);
+        const built = buildFlow([t], { [t.ID]: position }, onCycle ? new Set([t.ID]) : new Set()).nodes[0];
+        // Preserve the existing object identity if nothing meaningful
+        // changed (same position, same cycle status, same type label).
+        if (
+          existing &&
+          existing.position.x === position.x &&
+          existing.position.y === position.y &&
+          getNodeCycleFlag(existing) === onCycle &&
+          getNodeTaskType(existing) === t.Type
+        ) {
+          next.push(existing);
+        } else {
+          next.push(built);
         }
       }
-      if (next !== tasks) onChange(next);
-      // Visual position changes are not persisted; React Flow handles them locally.
-      void applyNodeChanges(changes, flow.nodes);
+      return next;
+    });
+    setEdges(buildFlow(tasks, {}, cycleNodes).edges);
+  }, [tasks, cycleNodes]);
+
+  // onNodesChange is now a thin wrapper around applyNodeChanges. The
+  // only side-effects we run are mirroring `remove` events into the
+  // tasks list and capturing `select` events for the config drawer.
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setNodes((current) => applyNodeChanges(changes, current));
+
+      // Mirror node removals into tasks.
+      const removedIds: string[] = [];
+      for (const c of changes) {
+        if (c.type === "remove") removedIds.push(c.id);
+        else if (c.type === "select" && c.selected && configMode) {
+          setSelectedID(c.id);
+        }
+      }
+      if (removedIds.length) {
+        const filtered = tasks
+          .filter((t) => !removedIds.includes(t.ID))
+          .map((t) => ({
+            ...t,
+            DependsOn: (t.DependsOn ?? []).filter((d) => !removedIds.includes(d)),
+          }));
+        onChange(filtered);
+      }
     },
-    [tasks, onChange, flow.nodes],
+    [tasks, onChange, configMode],
   );
 
   const onEdgesChange = useCallback(
@@ -314,9 +461,9 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
         }
       }
       if (next !== tasks) onChange(next);
-      void applyEdgeChanges(changes, flow.edges);
+      setEdges((current) => applyEdgeChanges(changes, current));
     },
-    [tasks, onChange, flow.edges],
+    [tasks, onChange],
   );
 
   const onConnect = useCallback(
@@ -331,9 +478,9 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
         return { ...t, DependsOn: Array.from(deps) };
       });
       onChange(next);
-      void addEdge(params, flow.edges);
+      setEdges((current) => addEdge({ ...params, animated: true }, current));
     },
-    [tasks, onChange, flow.edges],
+    [tasks, onChange],
   );
 
   const addTask = (type: TaskType) => {
@@ -350,8 +497,46 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
         DependsOn: [],
       } as Task,
     ]);
-    setSelectedID(id);
+    // The new node's position is seeded by the tasks→nodes reconciler
+    // (nextNodePositionFromNodes places it right of the rightmost
+    // existing node). After it renders, animate the viewport so the
+    // user always sees what they just added.
+    requestAnimationFrame(() => {
+      rf.fitView({ padding: 0.25, duration: 300 }).catch(() => {});
+    });
   };
+
+  // Toolbar action: tidy up the canvas into a clean left → right
+  // topological layout. Useful when the user has dragged things around
+  // and wants to snap everything back to the columns.
+  const onAutoArrange = () => {
+    const fresh = autoArrangePositions(tasks);
+    setNodes((current) =>
+      current.map((n) => {
+        const p = fresh[n.id];
+        return p ? { ...n, position: p } : n;
+      }),
+    );
+    requestAnimationFrame(() => {
+      rf.fitView({ padding: 0.2, duration: 400 }).catch(() => {});
+    });
+  };
+
+  const onFitView = () => {
+    rf.fitView({ padding: 0.2, duration: 250 }).catch(() => {});
+  };
+
+  // First-mount fit: if the editor loads with existing tasks (e.g.
+  // editing a saved pipeline), make sure they're framed.
+  useEffect(() => {
+    if (didInitialFit.current) return;
+    if (tasks.length === 0) return;
+    didInitialFit.current = true;
+    // Defer to give the layout one frame to settle.
+    requestAnimationFrame(() => {
+      rf.fitView({ padding: 0.25, duration: 0 }).catch(() => {});
+    });
+  }, [tasks.length, rf]);
 
   const updateSelected = (patch: Partial<Task>) => {
     if (!selectedID) return;
@@ -398,76 +583,150 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
         </MessageBar>
       )}
 
-      <div
-        className={styles.shell}
-        style={{
-          gridTemplateColumns: selected ? "220px 1fr 420px" : "220px 1fr",
-        }}
-      >
-        <aside className={styles.palette}>
-          <Subtitle2>Task palette</Subtitle2>
-          <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
-            Click to add a task. Drag-connect nodes to wire dependencies.
-          </Caption1>
-          {PALETTE.map((p) => (
-            <button
-              key={p.type}
-              type="button"
-              className={styles.paletteItem}
-              onClick={() => addTask(p.type)}
-            >
-              <span style={{ color: "#F38020" }}>{p.icon}</span>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{p.label}</div>
-                <div style={{ fontSize: 11, color: "#7A6A55" }}>{p.desc}</div>
-              </div>
-            </button>
-          ))}
-        </aside>
-
-        <div className={styles.canvas}>
-          <div className={styles.toolbar}>
-            <Badge appearance="outline" color="brand">
-              {tasks.length} task{tasks.length === 1 ? "" : "s"}
+      <div className={styles.editor}>
+        {/* ── Full-width top toolbar (ADF-style header) ──────────── */}
+        <div className={styles.topBar}>
+          {/* Status group */}
+          <Badge appearance="outline" color="brand">
+            {tasks.length} task{tasks.length === 1 ? "" : "s"}
+          </Badge>
+          {cycleNodes.size === 0 && tasks.length > 0 && (
+            <Badge appearance="filled" color="success">
+              valid DAG
             </Badge>
-            {cycleNodes.size === 0 && tasks.length > 0 && (
-              <Badge appearance="filled" color="success">
-                valid DAG
-              </Badge>
-            )}
-            <div style={{ flex: 1 }} />
-            <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
-              Drag from a node's right edge to wire a dependency. Click a node to edit it.
-            </Caption1>
-          </div>
-          <div style={{ height: 510 }}>
-            <ReactFlowProvider>
-              <ReactFlow
-                nodes={flow.nodes}
-                edges={flow.edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onNodeClick={(_, n) => setSelectedID(n.id)}
-                fitView
-                fitViewOptions={{ maxZoom: 1, padding: 0.3 }}
-                minZoom={0.2}
-                maxZoom={1.5}
-                proOptions={{ hideAttribution: true }}
-                defaultEdgeOptions={{ type: "smoothstep" }}
-              >
-                <Background />
-                <Controls />
-                <MiniMap pannable zoomable />
-              </ReactFlow>
-            </ReactFlowProvider>
-          </div>
+          )}
+          {cycleNodes.size > 0 && (
+            <Badge appearance="filled" color="danger">
+              cycle detected
+            </Badge>
+          )}
+
+          <div className={styles.toolbarDivider} />
+
+          {/* Layout group */}
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<Layer20Regular />}
+            onClick={onAutoArrange}
+            disabled={tasks.length === 0}
+            title="Re-layout left → right by topological level"
+          >
+            Auto-arrange
+          </Button>
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<AutoFitHeight20Regular />}
+            onClick={onFitView}
+            disabled={tasks.length === 0}
+            title="Frame the whole graph in the viewport"
+          >
+            Fit to screen
+          </Button>
+
+          <div className={styles.toolbarDivider} />
+
+          {/* Delete group */}
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<Delete20Regular />}
+            onClick={removeSelected}
+            disabled={!selectedID}
+            title={
+              selectedID
+                ? `Remove ${selectedID} from the pipeline`
+                : "Select a node to delete it"
+            }
+          >
+            Delete
+          </Button>
+
+          <div style={{ flex: 1 }} />
+
+          {/* View-mode group */}
+          <Switch
+            checked={configMode}
+            onChange={(_, d) => {
+              setConfigMode(d.checked);
+              if (!d.checked) setSelectedID(null);
+            }}
+            label={
+              <InfoLabel info="Off: drag nodes freely; clicks just select. On: clicking a node opens its config drawer.">
+                Config mode
+              </InfoLabel>
+            }
+          />
         </div>
 
-        {/* Task settings drawer — inline (not overlay) so it occupies
-            its own grid column and the canvas stays interactive while
-            you edit a node. Same pattern n8n and Dagster use. */}
-        <InlineDrawer open={!!selected} position="end" separator className={styles.drawer}>
+        {/* ── Middle row: palette · canvas · (drawer) ─────────── */}
+        <div
+          className={styles.shell}
+          style={{
+            gridTemplateColumns:
+              configMode && selected ? "220px 1fr 420px" : "220px 1fr",
+          }}
+        >
+          <aside className={styles.palette}>
+            <Subtitle2>Activities</Subtitle2>
+            <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
+              Click to add an activity. Drag-connect nodes to wire dependencies.
+            </Caption1>
+            {PALETTE.map((p) => (
+              <button
+                key={p.type}
+                type="button"
+                className={styles.paletteItem}
+                onClick={() => addTask(p.type)}
+              >
+                <span style={{ color: "#F38020" }}>{p.icon}</span>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{p.label}</div>
+                  <div style={{ fontSize: 11, color: "#7A6A55" }}>{p.desc}</div>
+                </div>
+              </button>
+            ))}
+          </aside>
+
+          <div className={styles.canvas}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={(_, n) => {
+                if (configMode) setSelectedID(n.id);
+              }}
+              fitView
+              fitViewOptions={{ maxZoom: 1, padding: 0.25 }}
+              minZoom={0.2}
+              maxZoom={1.5}
+              proOptions={{ hideAttribution: true }}
+              defaultEdgeOptions={{ type: "smoothstep", animated: true }}
+              deleteKeyCode={["Backspace", "Delete"]}
+              nodesDraggable
+              nodesConnectable
+              elementsSelectable
+            >
+              <Background gap={16} size={1} />
+              <Controls />
+              <MiniMap pannable zoomable />
+            </ReactFlow>
+          </div>
+
+          {/* Task settings drawer — only mounts while Config mode is
+              on AND a node is selected, otherwise it'd wrap to row 2
+              of the grid (the parent only carves out a 3rd column in
+              that case). */}
+          {configMode && selected && (
+          <InlineDrawer
+            open
+            position="end"
+            separator
+            className={styles.drawer}
+          >
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
@@ -503,6 +762,24 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
                           ),
                         };
                       }),
+                    );
+                    // Migrate the node ID in flow state so its
+                    // position is preserved across the rename.
+                    setNodes((current) =>
+                      current.map((n) =>
+                        n.id === selected.ID ? { ...n, id: newID } : n,
+                      ),
+                    );
+                    setEdges((current) =>
+                      current.map((e) => ({
+                        ...e,
+                        source: e.source === selected.ID ? newID : e.source,
+                        target: e.target === selected.ID ? newID : e.target,
+                        id:
+                          e.source === selected.ID || e.target === selected.ID
+                            ? `${e.source === selected.ID ? newID : e.source}->${e.target === selected.ID ? newID : e.target}`
+                            : e.id,
+                      })),
                     );
                     setSelectedID(newID);
                   }}
@@ -557,6 +834,21 @@ export function DAGEditor({ tasks, onChange }: DAGEditorProps) {
           </DrawerBody>
         )}
         </InlineDrawer>
+          )}
+        </div>
+
+        {/* ── Full-width hint bar ─────────────────────────────── */}
+        <div className={styles.hintBar}>
+          <span>
+            <strong>Drag</strong> the canvas to pan · <strong>scroll</strong> to zoom
+          </span>
+          <span>
+            <strong>Drag</strong> from a node's right edge to wire a dependency
+          </span>
+          <span>
+            <strong>Delete</strong> / <strong>Backspace</strong> removes the selected node
+          </span>
+        </div>
       </div>
     </div>
   );

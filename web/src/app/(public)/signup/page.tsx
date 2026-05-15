@@ -17,6 +17,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { AuthShell } from "@/components/auth-shell";
+import { InfoLabel } from "@/components/info-label";
 import { useSignup } from "@/lib/auth-client";
 
 // Curated G20+ subset. Add rows here as customers ask; the server-side
@@ -239,7 +240,11 @@ export default function SignupPage() {
     >
       <form className={styles.form} onSubmit={onSubmit} noValidate>
         <Field
-          label="Workspace name"
+          label={
+            <InfoLabel info="The name of your company or team workspace. Shown across the product and in invite emails. Must be unique globally; the URL slug is auto-derived (e.g. 'Acme Corp' becomes 'acme-corp').">
+              Workspace name
+            </InfoLabel>
+          }
           required
           validationState={showErr("workspace") ? "error" : "none"}
           validationMessage={showErr("workspace")}
@@ -255,7 +260,11 @@ export default function SignupPage() {
 
         <div className={styles.twoCol}>
           <Field
-            label="First name"
+            label={
+              <InfoLabel info="Shown to teammates in mentions, audit events, and the avatar menu. Use the name you go by, not necessarily what's on your ID.">
+                First name
+              </InfoLabel>
+            }
             required
             validationState={showErr("firstName") ? "error" : "none"}
             validationMessage={showErr("firstName")}
@@ -270,7 +279,11 @@ export default function SignupPage() {
             />
           </Field>
           <Field
-            label="Last name"
+            label={
+              <InfoLabel info="Combined with your first name to form the display name used across the product. Optional in mention rendering — initials fall back to the first name only.">
+                Last name
+              </InfoLabel>
+            }
             required
             validationState={showErr("lastName") ? "error" : "none"}
             validationMessage={showErr("lastName")}
@@ -287,7 +300,11 @@ export default function SignupPage() {
         </div>
 
         <Field
-          label="Work email"
+          label={
+            <InfoLabel info="Use your company address — Plowered defaults to inviting teammates from the same email domain. We email you a verification link; you'll need to click it before you can sign in.">
+              Work email
+            </InfoLabel>
+          }
           required
           validationState={showErr("email") ? "error" : "none"}
           validationMessage={showErr("email")}
@@ -303,7 +320,13 @@ export default function SignupPage() {
           />
         </Field>
 
-        <Field label="Country code">
+        <Field
+          label={
+            <InfoLabel info="E.164 country code (e.g. +1, +44, +91). Used to format the phone number and route SMS verifications when phone is provided.">
+              Country code
+            </InfoLabel>
+          }
+        >
           <Dropdown
             value={`${selectedCountry.flag} ${selectedCountry.code}  ${selectedCountry.label}`}
             selectedOptions={[phoneCountry]}
@@ -340,8 +363,11 @@ export default function SignupPage() {
         </Field>
 
         <Field
-          label="Phone (optional)"
-          hint="Used only for security alerts and break-glass recovery."
+          label={
+            <InfoLabel info="Optional. Used only for security alerts (suspicious-login SMS) and break-glass account recovery. Never shown to other tenants and never used for marketing.">
+              Phone (optional)
+            </InfoLabel>
+          }
           validationState={showErr("phone") ? "error" : "none"}
           validationMessage={showErr("phone")}
         >
@@ -360,9 +386,12 @@ export default function SignupPage() {
         </Field>
 
         <Field
-          label="Password"
+          label={
+            <InfoLabel info="Hashed with Argon2id (m=64MB, t=3, p=4) — never stored in plaintext. Must be 8+ chars and use 3 of: lowercase, uppercase, digit, symbol. Passwords found in haveibeenpwned breaches are rejected.">
+              Password
+            </InfoLabel>
+          }
           required
-          hint="8+ chars · 3 of: lowercase, uppercase, digit, symbol"
           validationState={showErr("password") ? "error" : "none"}
           validationMessage={showErr("password")}
         >
@@ -392,7 +421,11 @@ export default function SignupPage() {
         </Field>
 
         <Field
-          label="Confirm password"
+          label={
+            <InfoLabel info="Re-enter the password exactly. The submit button stays disabled until both fields match — guards against typos that would otherwise lock you out.">
+              Confirm password
+            </InfoLabel>
+          }
           required
           validationState={showErr("confirm") ? "error" : "none"}
           validationMessage={showErr("confirm")}

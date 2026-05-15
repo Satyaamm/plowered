@@ -27,6 +27,7 @@ export function useCreatePipeline() {
   return useMutation({
     mutationFn: (p: Partial<Pipeline>) => pipelinesApi.create(p),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "Pipeline created" },
   });
 }
 
@@ -38,6 +39,7 @@ export function useUpdatePipeline(id: string) {
       qc.invalidateQueries({ queryKey: KEY });
       qc.invalidateQueries({ queryKey: ["pipeline", id] });
     },
+    meta: { successMessage: "Pipeline saved" },
   });
 }
 
@@ -46,6 +48,7 @@ export function useDeletePipeline() {
   return useMutation({
     mutationFn: (id: string) => pipelinesApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "Pipeline deleted" },
   });
 }
 
@@ -57,5 +60,6 @@ export function useTriggerPipeline() {
       qc.invalidateQueries({ queryKey: ["runs"] });
       qc.invalidateQueries({ queryKey: ["pipeline-runs", id] });
     },
+    meta: { successMessage: "Pipeline run started" },
   });
 }

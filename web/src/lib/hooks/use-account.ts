@@ -27,6 +27,7 @@ export function useUpdateProfile() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["auth", "me"] });
     },
+    meta: { successMessage: "Profile updated" },
   });
 }
 
@@ -38,6 +39,7 @@ export function useChangePassword() {
         "/v1/account/change-password",
         body,
       ),
+    meta: { successMessage: "Password changed" },
   });
 }
 
@@ -57,11 +59,13 @@ export function useRevokeSession() {
     mutationFn: (id: string) =>
       call<void>("DELETE", `/v1/account/sessions/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: SESSIONS_KEY }),
+    meta: { successMessage: "Session revoked" },
   });
 }
 
 export function useSignOutEverywhere() {
   return useMutation({
     mutationFn: () => call<void>("DELETE", "/v1/account/sessions"),
+    meta: { successMessage: "Signed out of all sessions" },
   });
 }

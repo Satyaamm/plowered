@@ -61,6 +61,7 @@ export function useCreateAIProvider() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEY });
     },
+    meta: { successMessage: "AI provider added" },
   });
 }
 
@@ -72,6 +73,7 @@ export function useUpdateAIProvider() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEY });
     },
+    meta: { successMessage: "AI provider saved" },
   });
 }
 
@@ -83,16 +85,19 @@ export function useDeleteAIProvider() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEY });
     },
+    meta: { successMessage: "AI provider removed" },
   });
 }
 
 // useTestInlineAIProvider powers the "Test" button before save. Sends
 // the full draft payload (including the api_key) and gets back ok/error
-// without persisting anything.
+// without persisting anything. Silent — the result lives inline in the
+// form; a toast on every form-blur would be noise.
 export function useTestInlineAIProvider() {
   return useMutation({
     mutationFn: (body: AIProviderInput) =>
       call<TestResult>("POST", "/v1/ai/providers:test", body),
+    meta: { silent: true },
   });
 }
 
@@ -106,6 +111,7 @@ export function useTestStoredAIProvider() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEY });
     },
+    meta: { successMessage: "Provider reachable" },
   });
 }
 
@@ -117,6 +123,7 @@ export function useSetPrimaryAIProvider() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEY });
     },
+    meta: { successMessage: "Primary provider updated" },
   });
 }
 

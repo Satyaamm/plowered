@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -124,10 +125,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	jobsStore := postgres.NewJobsStore(pool)
 	classifyOrch := &classifier.Orchestrator{
 		Catalog: postgres.NewClassifyCatalog(pool),
-		Sampler: &classifier.Sampler{
-			Dialer:     newConnFactory(connections, vault),
-			SampleSize: 200,
-		},
+		Sampler: newMultiSampler(connections, vault),
 		Sink: postgres.Sink{
 			Store:   postgres.NewClassificationStore(pool),
 			Catalog: postgres.NewClassifyCatalog(pool),
@@ -205,6 +203,66 @@ func newConnFactory(conns connection.Repo, vault secrets.Vault) taskdeps.ConnFac
 			return nil, err
 		}
 		return pgx.Connect(ctx, dsn)
+	}
+}
+
+// newMultiSampler builds a connection-type-aware classifier.Sampler so
+// the worker can classify Postgres or Snowflake connections from the
+// same orchestrator. Mirrors cmd/plowered's helper.
+func newMultiSampler(conns connection.Repo, vault secrets.Vault) *classifier.MultiSampler {
+	if conns == nil || vault == nil {
+		return nil
+	}
+	resolver := func(ctx context.Context, tenantID, connID string) (connection.Type, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return "", err
+		}
+		return c.Type, nil
+	}
+	pgDialer := func(ctx context.Context, tenantID, connID string) (*pgx.Conn, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, fmt.Errorf("load connection %q: %w", connID, err)
+		}
+		var secret []byte
+		if c.SecretURN != "" {
+			b, err := vault.Get(ctx, tenantID, c.SecretURN)
+			if err != nil {
+				return nil, fmt.Errorf("read vault: %w", err)
+			}
+			secret = b
+		}
+		dsn, err := postgres_source.BuildDSN(c.Config, secret)
+		if err != nil {
+			return nil, err
+		}
+		return pgx.Connect(ctx, dsn)
+	}
+	sfDialer := func(ctx context.Context, tenantID, connID string) (*sql.DB, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, fmt.Errorf("load connection %q: %w", connID, err)
+		}
+		var secret []byte
+		if c.SecretURN != "" {
+			b, err := vault.Get(ctx, tenantID, c.SecretURN)
+			if err != nil {
+				return nil, fmt.Errorf("read vault: %w", err)
+			}
+			secret = b
+		}
+		dsn, err := snowflake_source.BuildDSN(c.Config, secret)
+		if err != nil {
+			return nil, err
+		}
+		return sql.Open("snowflake", dsn)
+	}
+	return &classifier.MultiSampler{
+		ResolveType: resolver,
+		Postgres:    &classifier.PostgresSampler{Dialer: pgDialer, SampleSize: 200},
+		Snowflake:   &classifier.SnowflakeSampler{Dialer: sfDialer, SampleSize: 200},
+		BigQuery:    classifier.BigQuerySampler{},
 	}
 }
 

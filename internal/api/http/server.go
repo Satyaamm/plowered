@@ -71,6 +71,14 @@ type Deps struct {
 	// Classifier runs sample-based classification jobs. Optional.
 	Classifier         Classifier
 	Classifications    ClassificationReader
+	// Profiler runs per-column profile jobs (#4 feature). Optional;
+	// nil disables /v1/assets/{id}/profile.
+	Profiler           Profiler
+	// Describer generates auto-description suggestions via the
+	// tenant's configured chat provider (#7 feature). Optional.
+	Describer          Describer
+	// Asker is the Text-to-SQL surface (#6 feature). Optional.
+	Asker              Asker
 
 	// Indexer + Searcher power /v1/search:semantic. Optional.
 	SearchIndexer  *search.Indexer
@@ -154,6 +162,15 @@ func NewMux(d Deps) *http.ServeMux {
 	}
 	if d.Classifier != nil || d.Classifications != nil {
 		classifyHandlers(mux, d.Classifier, d.Classifications, d.Jobs, enq)
+	}
+	if d.Profiler != nil {
+		profileHandlers(mux, d.Profiler)
+	}
+	if d.Describer != nil {
+		describeHandlers(mux, d.Describer)
+	}
+	if d.Asker != nil {
+		askHandlers(mux, d.Asker)
 	}
 	if d.Jobs != nil {
 		jobsHandlers(mux, d.Jobs)

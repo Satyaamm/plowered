@@ -36,6 +36,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { glossaryApi, type GlossaryTerm } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { InfoLabel } from "@/components/info-label";
 
 const STATUS_COLOR: Record<string, "subtle" | "warning" | "success" | "danger"> = {
   draft: "subtle",
@@ -129,6 +130,7 @@ export default function GlossaryPage() {
       setSelectedId(null);
       qc.invalidateQueries({ queryKey: ["glossary"] });
     },
+    meta: { successMessage: "Term deleted" },
   });
 
   const renderTree = (nodes: TreeNode[]): React.ReactNode =>
@@ -347,6 +349,7 @@ function TermDrawer({
       qc.invalidateQueries({ queryKey: ["glossary"] });
       onClose();
     },
+    meta: { successMessage: "Term created" },
   });
   const update = useMutation({
     mutationFn: (t: Partial<GlossaryTerm>) => glossaryApi.update(existing!.id, t),
@@ -354,6 +357,7 @@ function TermDrawer({
       qc.invalidateQueries({ queryKey: ["glossary"] });
       onClose();
     },
+    meta: { successMessage: "Term saved" },
   });
 
   const submit = () => {
@@ -390,10 +394,23 @@ function TermDrawer({
       </DrawerHeader>
       <DrawerBody>
         <div className={styles.drawerBody}>
-          <Field label="Name" required>
+          <Field
+            label={
+              <InfoLabel info="The canonical business term as your organization uses it. Capitalise it the way it appears in stakeholder documents (e.g. 'Customer', 'Active MRR', 'Churn Rate').">
+                Name
+              </InfoLabel>
+            }
+            required
+          >
             <Input value={name} onChange={(_, d) => setName(d.value)} placeholder="e.g. Customer" />
           </Field>
-          <Field label="Definition">
+          <Field
+            label={
+              <InfoLabel info="Plain-English explanation written for non-engineers. Stakeholders see this when they hover the term anywhere in the product — keep it precise and unambiguous.">
+                Definition
+              </InfoLabel>
+            }
+          >
             <Textarea
               rows={5}
               value={definition}
@@ -402,7 +419,13 @@ function TermDrawer({
             />
           </Field>
           <div className={styles.formGrid}>
-            <Field label="Parent term">
+            <Field
+              label={
+                <InfoLabel info="Optional. Groups this term under a broader concept (e.g. 'Active Customer' under 'Customer'). The tree on the left renders the hierarchy.">
+                  Parent term
+                </InfoLabel>
+              }
+            >
               <Dropdown
                 value={parentOptions.find((t) => t.id === parentId)?.name ?? "(none)"}
                 selectedOptions={parentId ? [parentId] : ["__none__"]}
@@ -420,7 +443,13 @@ function TermDrawer({
                 ))}
               </Dropdown>
             </Field>
-            <Field label="Status">
+            <Field
+              label={
+                <InfoLabel info="draft = work-in-progress (visible but not authoritative). approved = signed off, the source of truth. deprecated = still queryable for back-compat but flagged in the UI as stale.">
+                  Status
+                </InfoLabel>
+              }
+            >
               <Dropdown
                 value={status}
                 selectedOptions={[status]}

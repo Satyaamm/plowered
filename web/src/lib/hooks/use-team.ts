@@ -61,6 +61,7 @@ export function useCreateInvite() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: INVITES_KEY });
     },
+    meta: { successMessage: "Invite sent" },
   });
 }
 
@@ -71,6 +72,7 @@ export function useRevokeInvite() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: INVITES_KEY });
     },
+    meta: { successMessage: "Invite revoked" },
   });
 }
 
@@ -82,6 +84,7 @@ export function useUpdateMember() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: MEMBERS_KEY });
     },
+    meta: { successMessage: "Member updated" },
   });
 }
 
@@ -93,6 +96,7 @@ export function useRemoveMember() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: MEMBERS_KEY });
     },
+    meta: { successMessage: "Member removed" },
   });
 }
 
@@ -130,6 +134,7 @@ export function useAcceptInvite() {
         "/v1/auth/accept-invite",
         body,
       ),
+    meta: { successMessage: "Welcome to the workspace" },
   });
 }
 

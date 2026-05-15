@@ -19,6 +19,7 @@ export function useCreatePolicy() {
   return useMutation({
     mutationFn: (r: Partial<PolicyRule>) => policiesApi.create(r),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "Policy created" },
   });
 }
 
@@ -27,5 +28,6 @@ export function useDeletePolicy() {
   return useMutation({
     mutationFn: (id: string) => policiesApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "Policy deleted" },
   });
 }

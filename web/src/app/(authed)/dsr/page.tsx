@@ -32,6 +32,7 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
 import { Truncate } from "@/components/truncate";
+import { InfoLabel } from "@/components/info-label";
 
 const TYPES = ["access", "portability", "rectification", "erasure", "restriction"];
 const STATUS = ["received", "processing", "completed", "rejected"];
@@ -108,10 +109,24 @@ export default function DSRPage() {
                 <DialogTitle>File a DSR</DialogTitle>
                 <DialogContent>
                   <div className={styles.formStack}>
-                    <Field label="Subject ID" required hint="Pseudonymous (email hash, customer ID).">
+                    <Field
+                      label={
+                        <InfoLabel info="Pseudonymous identifier for the data subject (email hash, customer ID, account number). Never store the subject's plaintext email here — this field is searchable by every admin in the workspace.">
+                          Subject ID
+                        </InfoLabel>
+                      }
+                      required
+                    >
                       <Input value={subject} onChange={(_, d) => setSubject(d.value)} placeholder="user_42" />
                     </Field>
-                    <Field label="Type" required>
+                    <Field
+                      label={
+                        <InfoLabel info="GDPR Article 15-20 categories. access = give the subject a copy of their data; portability = machine-readable export; rectification = fix incorrect data; erasure = delete (right to be forgotten); restriction = stop processing without deleting.">
+                          Type
+                        </InfoLabel>
+                      }
+                      required
+                    >
                       <Dropdown
                         value={type}
                         selectedOptions={[type]}
@@ -122,7 +137,13 @@ export default function DSRPage() {
                         ))}
                       </Dropdown>
                     </Field>
-                    <Field label="Notes">
+                    <Field
+                      label={
+                        <InfoLabel info="Internal context: how the subject contacted you, identity verification status, regulator involvement. Recorded on the request and surfaced to whoever processes it within the 30-day SLA.">
+                          Notes
+                        </InfoLabel>
+                      }
+                    >
                       <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} rows={2} />
                     </Field>
                   </div>

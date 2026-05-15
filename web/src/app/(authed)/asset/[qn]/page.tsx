@@ -21,6 +21,7 @@ import { ErrorBanner, LoadingState } from "@/components/states";
 import { OverviewTab } from "@/components/asset-tabs/overview";
 import { SchemaTab } from "@/components/asset-tabs/schema";
 import { LineageTab } from "@/components/asset-tabs/lineage";
+import { ProfileTab } from "@/components/asset-tabs/profile";
 import { QualityTab } from "@/components/asset-tabs/quality";
 import { ActivityTab } from "@/components/asset-tabs/activity";
 
@@ -38,6 +39,7 @@ const useStyles = makeStyles({
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "schema",   label: "Schema",   restrictTo: ["table", "view", "schema"] as string[] | undefined },
+  { key: "profile",  label: "Profile",  restrictTo: ["table", "view"] as string[] | undefined },
   { key: "lineage",  label: "Lineage" },
   { key: "quality",  label: "Quality" },
   { key: "activity", label: "Activity" },
@@ -98,15 +100,15 @@ export default function AssetPage({
       />
 
       <div className={styles.pillRow} style={{ marginBottom: 16 }}>
-        <Badge appearance="outline" color="brand">{a.type}</Badge>
+        <Badge appearance="tint" color="brand">{a.type}</Badge>
         <Badge
-          appearance="outline"
+          appearance="tint"
           color={
             a.trust === "certified"
               ? "success"
               : a.trust === "deprecated"
                 ? "danger"
-                : "subtle"
+                : "warning"
           }
         >
           trust: {a.trust ?? "unverified"}
@@ -116,9 +118,11 @@ export default function AssetPage({
             <Badge
               appearance="filled"
               color={
-                t.startsWith("class:phi") || t.startsWith("class:pci")
+                t.startsWith("class:secret") ||
+                t.startsWith("class:phi") ||
+                t.startsWith("class:pci")
                   ? "danger"
-                  : t.startsWith("class:pii") || t.startsWith("class:secret")
+                  : t.startsWith("class:pii")
                     ? "warning"
                     : "informative"
               }
@@ -145,6 +149,7 @@ export default function AssetPage({
       <div className={styles.tabBody}>
         {tab === "overview" && <OverviewTab asset={a} />}
         {tab === "schema"   && <SchemaTab assetId={a.id} />}
+        {tab === "profile"  && <ProfileTab assetId={a.id} />}
         {tab === "lineage"  && <LineageTab assetId={a.id} />}
         {tab === "quality"  && <QualityTab assetId={a.id} qualifiedName={a.qualified_name} />}
         {tab === "activity" && <ActivityTab assetId={a.id} />}

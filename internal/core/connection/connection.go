@@ -26,13 +26,46 @@ var ErrNameTaken = errors.New("connection: name already used in this workspace")
 type Type string
 
 const (
+	// SQL-capable sources — accept arbitrary SELECT and participate in
+	// profiling, text-to-SQL, and SQL→SQL migration.
 	TypePostgres   Type = "postgres"
 	TypeSnowflake  Type = "snowflake"
 	TypeBigQuery   Type = "bigquery"
 	TypeRedshift   Type = "redshift"
 	TypeDatabricks Type = "databricks"
 	TypeMySQL      Type = "mysql"
+	TypeAthena     Type = "athena"
+
+	// Document / KV sources — no arbitrary SQL surface. They participate
+	// in migration (as source or sink) but NOT in profile / text-to-SQL.
+	// The HTTP layer rejects those calls with 400 instead of pretending.
+	TypeDynamoDB Type = "dynamodb"
+	TypeMongoDB  Type = "mongodb"
 )
+
+// IsSQL reports whether a Type supports arbitrary SELECT. Used by the
+// profile, describe, and ask endpoints to short-circuit unsupported
+// sources with a clear error.
+func (t Type) IsSQL() bool {
+	switch t {
+	case TypePostgres, TypeSnowflake, TypeBigQuery, TypeRedshift,
+		TypeDatabricks, TypeMySQL, TypeAthena:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsDocument reports whether a Type uses a document/KV query model.
+// Currently DynamoDB + MongoDB.
+func (t Type) IsDocument() bool {
+	switch t {
+	case TypeDynamoDB, TypeMongoDB:
+		return true
+	default:
+		return false
+	}
+}
 
 // Health is the live state from the most-recent test/check.
 type Health string

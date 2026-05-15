@@ -36,6 +36,7 @@ import {
 } from "@fluentui/react-icons";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { InfoLabel } from "@/components/info-label";
 import {
   Invite,
   Member,
@@ -222,7 +223,7 @@ function MembersList({
                 />
               )}
               {isSelf && (
-                <Badge appearance="outline" color="subtle">
+                <Badge appearance="tint" color="subtle">
                   you
                 </Badge>
               )}
@@ -319,9 +320,12 @@ function InviteDialog({ onClose }: { onClose: () => void }) {
         <DialogContent>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <Field
-              label="Email"
+              label={
+                <InfoLabel info="The teammate gets an email with a single-use link valid for 7 days. They set their own password — Plowered never sees it. The invite can be revoked from the Pending invites tab until they accept.">
+                  Email
+                </InfoLabel>
+              }
               required
-              hint="They'll get an email with a 7-day-valid link to set a password and join."
             >
               <Input
                 type="email"
@@ -329,7 +333,14 @@ function InviteDialog({ onClose }: { onClose: () => void }) {
                 onChange={(_, d) => setEmail(d.value)}
               />
             </Field>
-            <Field label="Roles" required>
+            <Field
+              label={
+                <InfoLabel info="Roles compose additively — pick one or more. Admins manage members + policies; editors mutate resources; viewers read only. Fine-grained access comes from the Policies page on top of these roles.">
+                  Roles
+                </InfoLabel>
+              }
+              required
+            >
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {ROLE_OPTIONS.map((r) => (
                   <Checkbox

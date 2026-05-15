@@ -74,6 +74,9 @@ type Deps struct {
 	Glossary  glossary.Repo // optional; powers /v1/glossary/*
 	Classifier      apihttp.Classifier
 	Classifications apihttp.ClassificationReader
+	Profiler        apihttp.Profiler
+	Describer       apihttp.Describer
+	Asker           apihttp.Asker
 	SearchIndexer   *search.Indexer
 	SearchSearcher  *search.Searcher
 	Jobs            jobs.Repo
@@ -215,6 +218,9 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		Glossary:    deps.Glossary,
 		Classifier:        deps.Classifier,
 		Classifications:   deps.Classifications,
+		Profiler:          deps.Profiler,
+		Describer:         deps.Describer,
+		Asker:             deps.Asker,
 		SearchIndexer:     deps.SearchIndexer,
 		SearchSearcher:    deps.SearchSearcher,
 		Jobs:              deps.Jobs,

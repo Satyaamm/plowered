@@ -198,7 +198,7 @@ export default function CatalogPage() {
         compare: (a, b) => a.type.localeCompare(b.type),
         renderHeaderCell: () => "Type",
         renderCell: (item) => (
-          <Badge appearance="outline" color={typeColor(item.type)}>
+          <Badge appearance="tint" color={typeColor(item.type)}>
             {item.type}
           </Badge>
         ),
@@ -239,7 +239,7 @@ export default function CatalogPage() {
           const isCertified = trust === "certified" || trust === "reviewed";
           return (
             <Badge
-              appearance={isCertified ? "filled" : "outline"}
+              appearance={isCertified ? "filled" : "tint"}
               color={
                 trust === "certified"
                   ? "success"
@@ -247,7 +247,7 @@ export default function CatalogPage() {
                     ? "informative"
                     : trust === "deprecated"
                       ? "danger"
-                      : "subtle"
+                      : "warning"
               }
               icon={isCertified ? <ShieldCheckmark16Regular /> : undefined}
             >

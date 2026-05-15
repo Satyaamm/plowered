@@ -17,11 +17,33 @@ import { usePipeline, useUpdatePipeline } from "@/lib/hooks";
 import { PageHeader } from "@/components/page-header";
 import { DAGEditor } from "@/components/dag-editor";
 import { ErrorBanner, LoadingState } from "@/components/states";
+import { InfoLabel } from "@/components/info-label";
 import type { Task } from "@/lib/types-orchestration";
 
 const useStyles = makeStyles({
   body: { display: "flex", flexDirection: "column", gap: "20px" },
-  form: { display: "grid", gridTemplateColumns: "1fr 1fr 220px", gap: "16px" },
+  form: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 200px",
+    gap: "16px",
+    alignItems: "start",
+  },
+  toggleCol: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    paddingTop: "26px",
+  },
+  toggleLabel: {
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground1,
+    whiteSpace: "nowrap",
+  },
+  toggleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
   panel: {
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
@@ -151,11 +173,22 @@ export default function EditPipelinePage({
       <div className={styles.body}>
         <div className={styles.panel}>
           <div className={styles.form}>
-            <Field label="Name" required>
+            <Field
+              label={
+                <InfoLabel info="A human-readable identifier for this pipeline. Use kebab-case (e.g. 'nightly-orders'). Must be unique within the workspace.">
+                  Name
+                </InfoLabel>
+              }
+              required
+            >
               <Input value={name} onChange={(_, d) => setName(d.value)} />
             </Field>
             <Field
-              label={enabled ? "Cron expression" : "Cron (optional)"}
+              label={
+                <InfoLabel info="Five-field cron expression (minute hour day-of-month month day-of-week). Examples: '0 3 * * *' = daily at 03:00; '0 9 * * 1-5' = weekdays 09:00; '*/15 * * * *' = every 15 minutes.">
+                  {enabled ? "Cron expression" : "Cron (optional)"}
+                </InfoLabel>
+              }
               required={enabled}
               validationState={cronError ? "error" : "none"}
               validationMessage={cronError || undefined}
@@ -167,20 +200,38 @@ export default function EditPipelinePage({
                 style={{ fontFamily: "ui-monospace, monospace" }}
               />
             </Field>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, justifyContent: "center" }}>
-              <Switch
-                label="Schedule enabled"
-                checked={enabled}
-                onChange={(_, d) => setEnabled(d.checked)}
-              />
-              <Switch
-                label="Fail fast"
-                checked={failFast}
-                onChange={(_, d) => setFailFast(d.checked)}
-              />
+            <div className={styles.toggleCol}>
+              <div className={styles.toggleRow}>
+                <Switch
+                  checked={enabled}
+                  onChange={(_, d) => setEnabled(d.checked)}
+                />
+                <span className={styles.toggleLabel}>
+                  <InfoLabel info="When on, the scheduler fires the pipeline on the cron above. Off pauses without losing history.">
+                    Schedule enabled
+                  </InfoLabel>
+                </span>
+              </div>
+              <div className={styles.toggleRow}>
+                <Switch
+                  checked={failFast}
+                  onChange={(_, d) => setFailFast(d.checked)}
+                />
+                <span className={styles.toggleLabel}>
+                  <InfoLabel info="When on, the first failing task aborts the run and downstream tasks are skipped. Off lets independent branches keep going.">
+                    Fail fast
+                  </InfoLabel>
+                </span>
+              </div>
             </div>
           </div>
-          <Field label="Description">
+          <Field
+            label={
+              <InfoLabel info="Optional context shown on the pipeline detail page and in oncall alerts.">
+                Description
+              </InfoLabel>
+            }
+          >
             <Textarea
               rows={2}
               value={description}

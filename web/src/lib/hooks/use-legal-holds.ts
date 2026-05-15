@@ -37,6 +37,7 @@ export function useIssueLegalHold() {
     mutationFn: (h: Partial<LegalHold>) =>
       call<LegalHold>("POST", `/v1/legal-holds`, h),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "Legal hold issued" },
   });
 }
 
@@ -45,5 +46,6 @@ export function useReleaseLegalHold() {
   return useMutation({
     mutationFn: (id: string) => call<void>("POST", `/v1/legal-holds/${id}/release`),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "Legal hold released" },
   });
 }

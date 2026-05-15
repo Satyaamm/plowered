@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -44,10 +45,16 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/pipeline/tasks"
 	"github.com/Satyaamm/plowered/internal/core/pipeline/tasks/qualitycheck"
 	"github.com/Satyaamm/plowered/internal/core/pipeline/tasks/taskdeps"
+	"github.com/Satyaamm/plowered/internal/core/aictx"
+	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/asker"
+	"github.com/Satyaamm/plowered/internal/core/describer"
 	"github.com/Satyaamm/plowered/internal/core/policy"
+	"github.com/Satyaamm/plowered/internal/core/profile"
 	"github.com/Satyaamm/plowered/internal/core/quality"
 	"github.com/Satyaamm/plowered/internal/core/search"
 	"github.com/Satyaamm/plowered/internal/core/secrets"
+	"github.com/Satyaamm/plowered/internal/core/warehouse"
 	"github.com/Satyaamm/plowered/internal/obs"
 	"github.com/Satyaamm/plowered/internal/scheduler"
 	"github.com/Satyaamm/plowered/pkg/llm/local"
@@ -272,21 +279,60 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 	jobsStore := postgres.NewJobsStore(pool)
 	classifyOrch := &classifier.Orchestrator{
 		Catalog: postgres.NewClassifyCatalog(pool),
-		Sampler: &classifier.Sampler{
-			Dialer:     newConnFactory(connectionStore, vault),
-			SampleSize: 200,
-		},
+		Sampler: newMultiSampler(connectionStore, vault),
 		Sink: postgres.Sink{
 			Store:   postgres.NewClassificationStore(pool),
 			Catalog: postgres.NewClassifyCatalog(pool),
 		},
 		Logger: logger,
 	}
+	// Profiler runs per-column profile jobs. Sits on top of the new
+	// warehouse abstraction so it works against Postgres / Snowflake /
+	// MySQL / Redshift without further per-driver code here.
+	profileStore := postgres.NewProfileStore(pool)
+	warehouseFactory := newWarehouseFactory(connectionStore, vault)
+	profilerSvc := &profile.Service{
+		Reader:    profileStore,
+		Cache:     profileStore,
+		Warehouse: warehouseFactory,
+		Logger:    logger,
+	}
+	// Describer: AI-driven description suggestions. Holds the resolver
+	// (tenant → chat provider) + a context builder that mixes catalog
+	// metadata with profile samples. Both reuse infra above; no new
+	// dependencies on this row.
+	aiProvidersRepo := postgres.NewAIProviderStore(pool)
+	aiResolver := aiprovider.NewResolver(aiProvidersRepo, vault)
+	aiDescStore := postgres.NewAIDescriptionStore(pool, cat)
+	contextBuilder := &aictx.Builder{
+		Assets:   aiDescStore,
+		Tables:   profileStore,
+		Profiles: profileStore,
+	}
+	describerSvc := &describer.Service{
+		Context:  contextBuilder,
+		Resolver: aiResolver,
+		Log:      aiDescStore,
+		Logger:   logger,
+	}
 	embeddingStore := postgres.NewEmbeddingStore(pool)
 	searchIndexer := &search.Indexer{
 		Catalog:  cat,
 		Provider: local.New(),
 		Store:    embeddingStore,
+	}
+	// Asker: Text-to-SQL. Reuses every shared piece — context builder,
+	// resolver, warehouse factory — and adds the semantic searcher
+	// for top-K table selection.
+	askSearcher := &search.Searcher{Catalog: cat, Provider: local.New(), Store: embeddingStore}
+	askerSvc := &asker.Service{
+		Context:   contextBuilder,
+		Resolver:  aiResolver,
+		Search:    postgres.NewAISemanticSearcher(pool, askSearcher, connectionStore),
+		Conns:     connectionStore,
+		Warehouse: warehouseFactory,
+		Log:       postgres.NewAIQueryStore(pool),
+		Logger:    logger,
 	}
 	extras := workerExtras{
 		Jobs:       jobsStore,
@@ -341,6 +387,9 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 			Glossary:    postgres.NewGlossaryStore(pool),
 			Classifier:      classifyOrch,
 			Classifications: postgres.NewClassificationStore(pool),
+			Profiler:        profilerSvc,
+			Describer:       describerSvc,
+			Asker:           askerSvc,
 			SearchIndexer:   searchIndexer,
 			SearchSearcher: &search.Searcher{
 				Catalog:  cat,
@@ -448,6 +497,177 @@ func newConnFactory(conns connection.Repo, vault secrets.Vault) taskdeps.ConnFac
 		}
 		return pgx.Connect(ctx, dsn)
 	}
+}
+
+// newMultiSampler wires a connection-type-aware classifier.Sampler.
+// Postgres reuses newConnFactory (pgx.Conn per call). Snowflake opens a
+// fresh *sql.DB per call; gosnowflake handles internal pooling and the
+// sampler tears the DB down via its own caller-owned lifecycle.
+// BigQuery returns ErrDriverNotInstalled because v0 ships without a
+// BigQuery driver.
+func newMultiSampler(conns connection.Repo, vault secrets.Vault) *classifier.MultiSampler {
+	if conns == nil || vault == nil {
+		return nil
+	}
+	resolver := func(ctx context.Context, tenantID, connID string) (connection.Type, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return "", err
+		}
+		return c.Type, nil
+	}
+	pgDialer := func(ctx context.Context, tenantID, connID string) (*pgx.Conn, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, fmt.Errorf("load connection %q: %w", connID, err)
+		}
+		var secret []byte
+		if c.SecretURN != "" {
+			b, err := vault.Get(ctx, tenantID, c.SecretURN)
+			if err != nil {
+				return nil, fmt.Errorf("read vault: %w", err)
+			}
+			secret = b
+		}
+		dsn, err := postgres_source.BuildDSN(c.Config, secret)
+		if err != nil {
+			return nil, err
+		}
+		return pgx.Connect(ctx, dsn)
+	}
+	sfDialer := func(ctx context.Context, tenantID, connID string) (*sql.DB, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, fmt.Errorf("load connection %q: %w", connID, err)
+		}
+		var secret []byte
+		if c.SecretURN != "" {
+			b, err := vault.Get(ctx, tenantID, c.SecretURN)
+			if err != nil {
+				return nil, fmt.Errorf("read vault: %w", err)
+			}
+			secret = b
+		}
+		dsn, err := snowflake_source.BuildDSN(c.Config, secret)
+		if err != nil {
+			return nil, err
+		}
+		return sql.Open("snowflake", dsn)
+	}
+	return &classifier.MultiSampler{
+		ResolveType: resolver,
+		Postgres:    &classifier.PostgresSampler{Dialer: pgDialer, SampleSize: 200},
+		Snowflake:   &classifier.SnowflakeSampler{Dialer: sfDialer, SampleSize: 200},
+		BigQuery:    classifier.BigQuerySampler{},
+	}
+}
+
+// newWarehouseFactory wires the single SQL-execution surface every
+// AI-driven feature depends on: profile, describe (later), text-to-SQL
+// (later). It registers one Factory per supported connection.Type;
+// adding a new SQL warehouse (Redshift, MySQL, BigQuery, Athena) is a
+// matter of dropping in another factory case here — no other code in
+// the platform changes.
+func newWarehouseFactory(conns connection.Repo, vault secrets.Vault) *warehouse.MultiFactory {
+	if conns == nil || vault == nil {
+		return nil
+	}
+	resolver := func(ctx context.Context, tenantID, connID string) (string, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return "", err
+		}
+		return string(c.Type), nil
+	}
+	loadSecret := func(ctx context.Context, c *connection.Connection) ([]byte, error) {
+		if c.SecretURN == "" {
+			return nil, nil
+		}
+		return vault.Get(ctx, c.TenantID, c.SecretURN)
+	}
+
+	mf := warehouse.NewMultiFactory(resolver)
+
+	mf.Register(string(connection.TypePostgres), func(ctx context.Context, tenantID, connID string) (warehouse.Executor, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, err
+		}
+		secret, err := loadSecret(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		dsn, err := postgres_source.BuildDSN(c.Config, secret)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := pgx.Connect(ctx, dsn)
+		if err != nil {
+			return nil, err
+		}
+		return warehouse.NewPostgresExecutor(conn), nil
+	})
+
+	// Redshift speaks the Postgres wire protocol — same dialer.
+	// Per-source config keys differ (Redshift uses cluster endpoint),
+	// but postgres_source.BuildDSN already handles host/port/db/user
+	// uniformly so the same builder works.
+	mf.Register(string(connection.TypeRedshift), func(ctx context.Context, tenantID, connID string) (warehouse.Executor, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, err
+		}
+		secret, err := loadSecret(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		dsn, err := postgres_source.BuildDSN(c.Config, secret)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := pgx.Connect(ctx, dsn)
+		if err != nil {
+			return nil, err
+		}
+		return warehouse.NewPostgresExecutor(conn), nil
+	})
+
+	mf.Register(string(connection.TypeSnowflake), func(ctx context.Context, tenantID, connID string) (warehouse.Executor, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, err
+		}
+		secret, err := loadSecret(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		dsn, err := snowflake_source.BuildDSN(c.Config, secret)
+		if err != nil {
+			return nil, err
+		}
+		db, err := sql.Open("snowflake", dsn)
+		if err != nil {
+			return nil, err
+		}
+		return warehouse.NewSQLExecutor(db), nil
+	})
+
+	// Cloud warehouses whose drivers aren't compiled in this build.
+	// They register as stubs so the dispatcher returns
+	// ErrDriverNotInstalled instead of "unsupported type" — clearer
+	// signal to the operator about what's needed.
+	for _, t := range []connection.Type{
+		connection.TypeBigQuery,
+		connection.TypeAthena,
+		connection.TypeMySQL, // MySQL driver not compiled this session
+	} {
+		typ := t
+		mf.Register(string(typ), func(_ context.Context, _, _ string) (warehouse.Executor, error) {
+			return warehouse.NotInstalledExecutor{Type: string(typ)}, nil
+		})
+	}
+
+	return mf
 }
 
 // buildEnqueuer picks Asynq when PLOWERED_REDIS_URL is set, sync fallback

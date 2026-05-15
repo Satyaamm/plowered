@@ -17,6 +17,7 @@ export function useCreateChannel() {
   return useMutation({
     mutationFn: (c: Partial<Channel>) => notificationsApi.channels.create(c),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notify-channels"] }),
+    meta: { successMessage: "Channel created" },
   });
 }
 
@@ -33,6 +34,7 @@ export function useCreateNotifyRule() {
   return useMutation({
     mutationFn: (r: Partial<NotifyRule>) => notificationsApi.rules.create(r),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notify-rules"] }),
+    meta: { successMessage: "Notify rule created" },
   });
 }
 

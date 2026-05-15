@@ -2,141 +2,86 @@ package classifier
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
-	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
-// Sampler reads a small page of rows from a Postgres table and runs every
-// column's values through the detector pack. It returns one Result per
-// column. The sampling is one round-trip per table — a single SELECT with
-// all the column names — and is bounded by SampleSize.
-type Sampler struct {
-	// Dialer opens a *pgx.Conn for a (tenant, connection_id) pair. The
-	// caller (transformrun executor / connection-classify handler) wires
-	// this to the existing connection.Repo + secrets.Vault chain.
-	Dialer func(ctx context.Context, tenantID, connectionID string) (*pgx.Conn, error)
-
-	// SampleSize is the number of rows to read per table. Defaults to 100
-	// when zero. The actual number returned can be smaller if the table
-	// has fewer rows.
-	SampleSize int
-
-	// MaxColumnsPerTable caps the columns scanned per round to avoid
-	// pathological wide tables. 0 = unlimited.
-	MaxColumnsPerTable int
+// Sampler reads a small page of rows from a customer-owned table and
+// runs every column's values through the detector pack. Implementations
+// exist per warehouse type (Postgres, Snowflake, BigQuery) — see
+// sampler_postgres.go, sampler_snowflake.go, sampler_bigquery.go. The
+// orchestrator and the higher-level preview API both depend on this
+// interface only; routing across warehouse types is the MultiSampler's
+// job (sampler_multi.go).
+type Sampler interface {
+	SampleTable(
+		ctx context.Context,
+		tenantID, connectionID, schema, table string,
+		columns []string,
+	) ([]Result, error)
 }
 
-// SampleTable opens a connection, reads up to SampleSize rows from
-// `<schema>.<table>`, and classifies every column independently. The
-// `columns` argument is the set of column names to read; passing nil
-// reads `*` and uses pgx's column metadata. Empty schema means the
-// default search_path applies.
-func (s *Sampler) SampleTable(
-	ctx context.Context,
-	tenantID, connectionID, schema, table string,
-	columns []string,
-) ([]Result, error) {
-	if s.Dialer == nil {
-		return nil, errors.New("classifier: dialer not configured")
-	}
-	size := s.SampleSize
-	if size <= 0 {
-		size = 100
-	}
-	if s.MaxColumnsPerTable > 0 && len(columns) > s.MaxColumnsPerTable {
-		columns = columns[:s.MaxColumnsPerTable]
-	}
+// ---------------------------------------------------------------------
+// Shared helpers used by every per-warehouse sampler.
+// ---------------------------------------------------------------------
 
-	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	conn, err := s.Dialer(dialCtx, tenantID, connectionID)
-	cancel()
-	if err != nil {
-		return nil, fmt.Errorf("dial connection: %w", err)
+// defaultSampleSize returns the per-table row budget when the caller
+// didn't pin one explicitly. 100 is a sweet spot for regex precision
+// without overloading a small warehouse.
+func defaultSampleSize(n int) int {
+	if n <= 0 {
+		return 100
 	}
-	defer conn.Close(context.Background())
-
-	queryCtx, queryCancel := context.WithTimeout(ctx, 30*time.Second)
-	defer queryCancel()
-
-	q := buildSampleQuery(schema, table, columns, size)
-	rows, err := conn.Query(queryCtx, q)
-	if err != nil {
-		return nil, fmt.Errorf("sample %s.%s: %w", schema, table, err)
-	}
-	defer rows.Close()
-
-	fields := rows.FieldDescriptions()
-	colNames := make([]string, len(fields))
-	buckets := make([][]string, len(fields))
-	for i, f := range fields {
-		colNames[i] = string(f.Name)
-		buckets[i] = make([]string, 0, size)
-	}
-
-	for rows.Next() {
-		vals, err := rows.Values()
-		if err != nil {
-			return nil, err
-		}
-		for i, v := range vals {
-			s := stringify(v)
-			if s == "" {
-				continue
-			}
-			buckets[i] = append(buckets[i], s)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	out := make([]Result, 0, len(colNames))
-	for i, col := range colNames {
-		out = append(out, ClassifySamples(col, buckets[i]))
-	}
-	return out, nil
+	return n
 }
 
-// buildSampleQuery returns a SELECT that reads `size` rows. We avoid
-// ORDER BY random() — on large tables it's a full table scan — and use
-// TABLESAMPLE SYSTEM where possible. Postgres rejects TABLESAMPLE on
-// views; we fall back to LIMIT for that case at runtime via a callback.
-func buildSampleQuery(schema, table string, columns []string, size int) string {
-	tableRef := quoteIdent(table)
-	if schema != "" {
-		tableRef = quoteIdent(schema) + "." + tableRef
+// capColumns optionally trims the column slice to keep wide tables
+// (>500 cols is real in some warehouses) from blowing the round-trip.
+func capColumns(cols []string, limit int) []string {
+	if limit > 0 && len(cols) > limit {
+		return cols[:limit]
 	}
-	cols := "*"
-	if len(columns) > 0 {
-		quoted := make([]string, len(columns))
-		for i, c := range columns {
-			quoted[i] = quoteIdent(c)
-		}
-		cols = strings.Join(quoted, ", ")
-	}
-	// LIMIT is the simplest universally-supported sampling. v0 is fine
-	// with the bias of "first N rows in physical order" — column-level
-	// regex matching cares less about row distribution than aggregate
-	// stats would.
-	return fmt.Sprintf("SELECT %s FROM %s LIMIT %d", cols, tableRef, size)
+	return cols
 }
 
+// quoteIdent wraps an identifier in double quotes, matching the SQL
+// standard. Both Postgres and Snowflake accept this; BigQuery uses
+// backticks (handled in its sampler). Identifiers containing a literal
+// double-quote or NUL are rejected (returns empty string) — sampling
+// untrusted DDL with embedded quotes is a SQL-injection vector.
 func quoteIdent(s string) string {
-	// Disallow embedded quotes / spaces / control chars defensively.
 	for _, r := range s {
 		if r == '"' || r == '\x00' {
-			return "\"\""
+			return ""
 		}
 	}
 	return "\"" + s + "\""
 }
 
-// stringify renders a pgx-decoded value for regex matching. We're not
-// trying to be exhaustive — non-textual values just get fmt.Sprint.
+// joinQuoted renders a column list as "a", "b", "c" or "*" when the
+// caller didn't supply names. Returned string slots directly into a
+// SELECT.
+func joinQuoted(columns []string) string {
+	if len(columns) == 0 {
+		return "*"
+	}
+	parts := make([]string, 0, len(columns))
+	for _, c := range columns {
+		q := quoteIdent(c)
+		if q == "" {
+			continue
+		}
+		parts = append(parts, q)
+	}
+	if len(parts) == 0 {
+		return "*"
+	}
+	return strings.Join(parts, ", ")
+}
+
+// stringify renders an arbitrary driver-decoded value as a string so
+// the detector regexes can match. Non-textual values fall through to
+// fmt.Sprint.
 func stringify(v any) string {
 	if v == nil {
 		return ""

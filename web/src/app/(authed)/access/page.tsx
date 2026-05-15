@@ -28,6 +28,7 @@ import { Play20Regular } from "@fluentui/react-icons";
 import { useAccessPreview, type AccessRow } from "@/lib/hooks";
 import { PageHeader } from "@/components/page-header";
 import { ErrorBanner } from "@/components/states";
+import { InfoLabel } from "@/components/info-label";
 
 const ROLES = ["", "viewer", "editor", "steward", "admin", "super_admin"];
 const VERBS = ["read", "edit", "propose", "certify", "delete", "run", "admin"];
@@ -94,7 +95,13 @@ export default function AccessPage() {
 
       <div className={styles.panel}>
         <div className={styles.formRow}>
-          <Field label="Role">
+          <Field
+            label={
+              <InfoLabel info="Synthetic role to simulate. Used together with Groups to model a principal who doesn't exist yet. Leave blank to test a no-role visitor.">
+                Role
+              </InfoLabel>
+            }
+          >
             <Dropdown
               value={role || "(no role)"}
               selectedOptions={[role]}
@@ -107,13 +114,31 @@ export default function AccessPage() {
               ))}
             </Dropdown>
           </Field>
-          <Field label="Groups (comma-separated)">
+          <Field
+            label={
+              <InfoLabel info="Comma-separated group names the simulated principal belongs to (e.g. 'finance, eu-team'). Combined with the Role to match group-scoped rules from the Policies page.">
+                Groups (comma-separated)
+              </InfoLabel>
+            }
+          >
             <Input value={groups} onChange={(_, d) => setGroups(d.value)} placeholder="finance, eu-team" />
           </Field>
-          <Field label="Or impersonate by email" hint="Resolves real roles + groups">
+          <Field
+            label={
+              <InfoLabel info="Pick an existing user to test access exactly as they would experience it — Plowered resolves their real roles + groups + tenant membership. Overrides Role and Groups above.">
+                Or impersonate by email
+              </InfoLabel>
+            }
+          >
             <Input value={email} onChange={(_, d) => setEmail(d.value)} placeholder="alice@example.com" />
           </Field>
-          <Field label="Verb">
+          <Field
+            label={
+              <InfoLabel info="The action you want to test. read = can they see it; edit = mutate; propose = suggest a change; certify = mark trusted; delete = soft-delete; run = trigger; admin = manage policies.">
+                Verb
+              </InfoLabel>
+            }
+          >
             <Dropdown
               value={verb}
               selectedOptions={[verb]}

@@ -18,9 +18,11 @@ export interface SemanticResponse {
 }
 
 export function useSemanticSearch() {
+  // Silent — the results are the surface itself.
   return useMutation({
     mutationFn: (req: { query: string; k?: number }) =>
       call<SemanticResponse>("POST", "/v1/search:semantic", req),
+    meta: { silent: true },
   });
 }
 
@@ -42,5 +44,6 @@ export function useReindex() {
   return useMutation({
     mutationFn: () =>
       call<ReindexResult | ReindexEnqueued>("POST", "/v1/search:reindex"),
+    meta: { successMessage: "Reindex queued" },
   });
 }

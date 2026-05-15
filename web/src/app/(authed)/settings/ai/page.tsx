@@ -37,6 +37,7 @@ import {
 } from "@fluentui/react-icons";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
+import { InfoLabel } from "@/components/info-label";
 import {
   AICapability,
   AIProvider,
@@ -273,7 +274,14 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
         <DialogTitle>Add AI provider</DialogTitle>
         <DialogContent>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <Field label="Provider" required>
+            <Field
+              label={
+                <InfoLabel info="Which model vendor you're authenticating with. The three first-class options use the vendor's native SDK; pick 'Custom (OpenAI-compatible)' for self-hosted gateways like LiteLLM, Ollama, OpenRouter, or vLLM.">
+                  Provider
+                </InfoLabel>
+              }
+              required
+            >
               <Dropdown
                 value={KIND_LABELS[kind]}
                 selectedOptions={[kind]}
@@ -299,9 +307,12 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
             </Field>
 
             <Field
-              label="Nickname"
+              label={
+                <InfoLabel info="A label only your tenant sees — e.g. 'Claude Opus (prod)'. Used in audit logs and the provider dropdown when multiple are configured for the same capability.">
+                  Nickname
+                </InfoLabel>
+              }
               required
-              hint="A label only your tenant sees, e.g. “Claude Opus (prod)”."
             >
               <Input
                 value={name}
@@ -314,9 +325,12 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <Field
-                label="Model"
+                label={
+                  <InfoLabel info="The exact model ID the provider expects in API calls — case-sensitive. Plowered sends it verbatim; mistype here and every call fails with a 'model not found' error.">
+                    Model
+                  </InfoLabel>
+                }
                 required
-                hint="Provider-specific model ID. Suggestions below."
               >
                 <Combobox
                   freeform
@@ -338,7 +352,14 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
                 </Combobox>
               </Field>
 
-              <Field label="Capability" required>
+              <Field
+                label={
+                  <InfoLabel info="Chat: text generation, glossary auto-write, semantic answers. Embeddings: vector representations for semantic search. Each provider entry serves exactly one capability.">
+                    Capability
+                  </InfoLabel>
+                }
+                required
+              >
                 <Dropdown
                   value={capability === "chat" ? "Chat / generation" : "Embeddings"}
                   selectedOptions={[capability]}
@@ -354,13 +375,18 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
             </div>
 
             <Field
-              label="Base URL"
-              required={kind === "openai-compatible"}
-              hint={
-                kind === "openai-compatible"
-                  ? "Required. Point at any OpenAI-compatible endpoint (LiteLLM, Ollama, OpenRouter, vLLM…)."
-                  : "Optional. Leave blank for the official provider host."
+              label={
+                <InfoLabel
+                  info={
+                    kind === "openai-compatible"
+                      ? "Required for OpenAI-compatible gateways. Point at any /v1-style endpoint — LiteLLM, Ollama, OpenRouter, vLLM, etc. Include the protocol and port; no trailing slash."
+                      : "Optional. Leave blank to use the official provider host. Set to a proxy URL (e.g. AWS Bedrock, Azure OpenAI passthrough) if your network egress is restricted."
+                  }
+                >
+                  Base URL
+                </InfoLabel>
               }
+              required={kind === "openai-compatible"}
             >
               <Input
                 placeholder={
@@ -379,9 +405,12 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
             </Field>
 
             <Field
-              label="API key"
+              label={
+                <InfoLabel info="Stored encrypted at rest (AES-256-GCM) in the secrets vault. Never returned through the API after save — to rotate, delete and re-create the provider.">
+                  API key
+                </InfoLabel>
+              }
               required
-              hint="Stored encrypted in the secrets vault. Never visible after save."
             >
               <Input
                 type="password"

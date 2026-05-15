@@ -34,6 +34,7 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { Paginator } from "@/components/paginator";
 import { Truncate } from "@/components/truncate";
+import { InfoLabel } from "@/components/info-label";
 
 const useStyles = makeStyles({
   body: { display: "flex", flexDirection: "column", gap: "16px" },
@@ -103,15 +104,31 @@ export default function LegalHoldsPage() {
                 <DialogTitle>Issue legal hold</DialogTitle>
                 <DialogContent>
                   <div className={styles.formStack}>
-                    <Field label="Matter" required>
+                    <Field
+                      label={
+                        <InfoLabel info="The litigation or regulator reference this hold ties to. Required for audit defensibility — courts ask for it during e-discovery. Use your organisation's matter-management ID (e.g. case-2026-04).">
+                          Matter
+                        </InfoLabel>
+                      }
+                      required
+                    >
                       <Input value={matter} onChange={(_, d) => setMatter(d.value)} placeholder="Matter reference (e.g. case-2026-04)" />
                     </Field>
-                    <Field label="Reason">
+                    <Field
+                      label={
+                        <InfoLabel info="Free-text justification recorded on the hold and surfaced in the deletion-blocked error message. Useful for the person who later tries to delete and gets a 409.">
+                          Reason
+                        </InfoLabel>
+                      }
+                    >
                       <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={2} />
                     </Field>
                     <Field
-                      label="Scope: resource types"
-                      hint="Comma-separated. Leave empty for tenant-wide hold."
+                      label={
+                        <InfoLabel info="Comma-separated list of resource types frozen by this hold (pipeline, check, asset, policy, connection, run). Empty = tenant-wide hold: every soft-deletable resource refuses delete until released.">
+                          Scope: resource types
+                        </InfoLabel>
+                      }
                     >
                       <Input
                         value={resourceTypes}
@@ -169,7 +186,7 @@ export default function LegalHoldsPage() {
                     <TableRow key={h.ID}>
                       <TableCell>
                         {released ? (
-                          <Badge appearance="outline" color="subtle">released</Badge>
+                          <Badge appearance="tint" color="subtle">released</Badge>
                         ) : (
                           <Badge appearance="filled" color="danger" icon={<Gavel20Regular />}>
                             active

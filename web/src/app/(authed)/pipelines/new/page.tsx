@@ -17,11 +17,38 @@ import { useCreatePipeline } from "@/lib/hooks";
 import { PageHeader } from "@/components/page-header";
 import { ErrorBanner } from "@/components/states";
 import { DAGEditor } from "@/components/dag-editor";
+import { InfoLabel } from "@/components/info-label";
 import type { Task } from "@/lib/types-orchestration";
 
 const useStyles = makeStyles({
   body: { display: "flex", flexDirection: "column", gap: "20px" },
-  form: { display: "grid", gridTemplateColumns: "1fr 1fr 220px", gap: "16px" },
+  form: {
+    display: "grid",
+    // Two equal data columns + a fixed toggle rail. alignItems:start so
+    // the Cron validation message pushing one row taller doesn't drag
+    // the other columns out of line.
+    gridTemplateColumns: "1fr 1fr 200px",
+    gap: "16px",
+    alignItems: "start",
+  },
+  toggleCol: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    // Align with the *input* in the sibling Fields, not the field label
+    // (Fluent v9 Field label is ~20px tall + 4px gap to the input).
+    paddingTop: "26px",
+  },
+  toggleLabel: {
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground1,
+    whiteSpace: "nowrap",
+  },
+  toggleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
   panel: {
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: `0 0 0 1px ${tokens.colorNeutralStroke2}`,
@@ -127,7 +154,14 @@ export default function NewPipelinePage() {
       <div className={styles.body}>
         <div className={styles.panel}>
           <div className={styles.form}>
-            <Field label="Name" required>
+            <Field
+              label={
+                <InfoLabel info="A human-readable identifier for this pipeline. Use kebab-case (e.g. 'nightly-orders'). Must be unique within the workspace; runs are listed under this name in the UI and logs.">
+                  Name
+                </InfoLabel>
+              }
+              required
+            >
               <Input
                 value={name}
                 onChange={(_, d) => setName(d.value)}
@@ -136,7 +170,11 @@ export default function NewPipelinePage() {
               />
             </Field>
             <Field
-              label={enabled ? "Cron expression" : "Cron (optional)"}
+              label={
+                <InfoLabel info="Five-field cron expression (minute hour day-of-month month day-of-week). Examples: '0 3 * * *' = daily at 03:00; '0 9 * * 1-5' = weekdays 09:00; '*/15 * * * *' = every 15 minutes. Evaluated in the workspace timezone.">
+                  {enabled ? "Cron expression" : "Cron (optional)"}
+                </InfoLabel>
+              }
               required={enabled}
               validationState={cronError ? "error" : "none"}
               validationMessage={cronError || undefined}
@@ -148,20 +186,38 @@ export default function NewPipelinePage() {
                 style={{ fontFamily: "ui-monospace, monospace" }}
               />
             </Field>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, justifyContent: "center" }}>
-              <Switch
-                label="Schedule enabled"
-                checked={enabled}
-                onChange={(_, d) => setEnabled(d.checked)}
-              />
-              <Switch
-                label="Fail fast on first task failure"
-                checked={failFast}
-                onChange={(_, d) => setFailFast(d.checked)}
-              />
+            <div className={styles.toggleCol}>
+              <div className={styles.toggleRow}>
+                <Switch
+                  checked={enabled}
+                  onChange={(_, d) => setEnabled(d.checked)}
+                />
+                <span className={styles.toggleLabel}>
+                  <InfoLabel info="When on, the scheduler fires the pipeline on the cron above. Off pauses the schedule without losing history — you can still trigger it manually or via API.">
+                    Schedule enabled
+                  </InfoLabel>
+                </span>
+              </div>
+              <div className={styles.toggleRow}>
+                <Switch
+                  checked={failFast}
+                  onChange={(_, d) => setFailFast(d.checked)}
+                />
+                <span className={styles.toggleLabel}>
+                  <InfoLabel info="When on, the first failing task aborts the run and downstream tasks are skipped. When off, independent branches keep going so partial completion is recorded.">
+                    Fail fast
+                  </InfoLabel>
+                </span>
+              </div>
             </div>
           </div>
-          <Field label="Description">
+          <Field
+            label={
+              <InfoLabel info="Optional context shown on the pipeline detail page and in oncall alerts. Note what the pipeline does, who owns it, and who to ping when it fails.">
+                Description
+              </InfoLabel>
+            }
+          >
             <Textarea
               rows={2}
               value={description}

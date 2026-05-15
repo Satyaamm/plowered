@@ -36,6 +36,7 @@ export function useCreateDSR() {
     mutationFn: (r: { subject_id: string; type: string; notes?: string }) =>
       call<DSRRequest>("POST", `/v1/dsr`, r),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "DSR request opened" },
   });
 }
 
@@ -54,5 +55,6 @@ export function useUpdateDSRStatus() {
         notes: args.notes,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    meta: { successMessage: "DSR status updated" },
   });
 }

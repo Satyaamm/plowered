@@ -15,12 +15,23 @@ type Result struct {
 // values and returns the winning Result. Empty input yields a zero
 // Result (no tags).
 func ClassifySamples(column string, samples []string) Result {
+	return ClassifySamplesWith(column, samples, nil)
+}
+
+// ClassifySamplesWith is the filtered variant of ClassifySamples. When
+// enabled is non-nil only detectors whose Kind is present in the map
+// run; other detectors are skipped entirely (no Hits entry, no tag).
+// Passing nil is equivalent to ClassifySamples.
+func ClassifySamplesWith(column string, samples []string, enabled map[string]bool) Result {
 	r := Result{Column: column, Sampled: len(samples), Hits: map[string]int{}}
 	if len(samples) == 0 {
 		return r
 	}
 	tagSet := map[string]struct{}{}
 	for _, det := range All() {
+		if enabled != nil && !enabled[det.Kind] {
+			continue
+		}
 		hits := 0
 		for _, v := range samples {
 			v = trim(v)

@@ -6,16 +6,30 @@ import {
   Button,
   Caption1,
   Combobox,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
   Option,
+  Spinner,
   Subtitle2,
+  Text,
   Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { Add16Regular, Dismiss16Regular, ShieldCheckmark16Regular } from "@fluentui/react-icons";
+import {
+  Add16Regular,
+  Dismiss16Regular,
+  Sparkle20Regular,
+  ShieldCheckmark16Regular,
+} from "@fluentui/react-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { glossaryApi } from "@/lib/api";
+import { useDescribeAsset, useUpdateAsset } from "@/lib/hooks";
 import type { Asset } from "@/lib/types";
 
 const useStyles = makeStyles({
@@ -54,6 +68,17 @@ const useStyles = makeStyles({
   },
   tagRow: { display: "flex", flexWrap: "wrap", gap: "6px" },
   empty: { color: tokens.colorNeutralForeground3, fontStyle: "italic" },
+  panelHeader: { display: "flex", alignItems: "center", justifyContent: "space-between" },
+  aiNote: {
+    backgroundColor: tokens.colorNeutralBackground2,
+    borderRadius: "6px",
+    padding: "10px 12px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  aiNoteMeta: { color: tokens.colorNeutralForeground3, fontSize: "11px" },
+  dialogBody: { display: "flex", flexDirection: "column", gap: "10px" },
 });
 
 function tagColor(tag: string): "informative" | "danger" | "warning" | "success" | "subtle" {
@@ -67,18 +92,32 @@ export function OverviewTab({ asset }: { asset: Asset }) {
   const trust = asset.trust ?? "unverified";
   const isCertified = trust === "certified" || trust === "reviewed";
   const props = (asset.properties ?? {}) as Record<string, any>;
+  const isTableLike = ["table", "view"].includes(asset.type ?? "");
 
   return (
     <div className={styles.body}>
       <div className={styles.twoCol}>
         <div className={styles.panel}>
-          <Subtitle2>Description</Subtitle2>
+          <div className={styles.panelHeader}>
+            <Subtitle2>Description</Subtitle2>
+            {isTableLike && <AISuggestButton assetId={asset.id} />}
+          </div>
           {asset.description ? (
             <Body1>{asset.description}</Body1>
           ) : (
             <span className={styles.empty}>
-              No description yet. Add one from the connection or via API.
+              No description yet. Add one from the connection, via API, or use Suggest with AI.
             </span>
+          )}
+          {/* Show the AI-generated description separately so it's clear which is human vs auto */}
+          {(asset as any).description_ai && (
+            <div className={styles.aiNote}>
+              <Caption1 className={styles.aiNoteMeta}>
+                <Sparkle20Regular style={{ width: 12, height: 12, verticalAlign: "middle" }} />
+                {" "}AI-generated
+              </Caption1>
+              <Body1>{(asset as any).description_ai}</Body1>
+            </div>
           )}
         </div>
 
@@ -219,10 +258,12 @@ function AssetTerms({ assetId }: { assetId: string }) {
       setPickValue("");
       setPickedId("");
     },
+    meta: { successMessage: "Term linked" },
   });
   const unassign = useMutation({
     mutationFn: (termId: string) => glossaryApi.unassign(termId, assetId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["asset-terms", assetId] }),
+    meta: { successMessage: "Term unlinked" },
   });
 
   const linkedIds = new Set((linked.data ?? []).map((t) => t.term_id));
@@ -288,6 +329,101 @@ function AssetTerms({ assetId }: { assetId: string }) {
           <Button size="small" onClick={() => setPicking(false)}>Cancel</Button>
         </div>
       )}
+    </>
+  );
+}
+
+// AISuggestButton is the "Suggest with AI" trigger + review dialog.
+// The mutation is silent (the dialog IS the feedback); accept fires a
+// noisy toast via useUpdateAsset.
+function AISuggestButton({ assetId }: { assetId: string }) {
+  const styles = useStyles();
+  const [open, setOpen] = useState(false);
+  const describe = useDescribeAsset(assetId);
+  const update = useUpdateAsset(assetId);
+
+  const onTrigger = async () => {
+    setOpen(true);
+    if (!describe.data) {
+      try {
+        await describe.mutateAsync();
+      } catch {
+        // error rendered inline in the dialog
+      }
+    }
+  };
+
+  const onAccept = async () => {
+    if (!describe.data) return;
+    await update.mutateAsync({ description_ai: describe.data.suggestion });
+    setOpen(false);
+    describe.reset();
+  };
+
+  const onDiscard = () => {
+    setOpen(false);
+    describe.reset();
+  };
+
+  return (
+    <>
+      <Button
+        size="small"
+        appearance="subtle"
+        icon={<Sparkle20Regular />}
+        onClick={onTrigger}
+        disabled={describe.isPending}
+      >
+        Suggest with AI
+      </Button>
+      <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>AI-generated description</DialogTitle>
+            <DialogContent>
+              <div className={styles.dialogBody}>
+                {describe.isPending && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Spinner size="extra-tiny" />
+                    <Text>Generating description…</Text>
+                  </div>
+                )}
+                {describe.error && (
+                  <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
+                    {(describe.error as Error).message}
+                  </Text>
+                )}
+                {describe.data && (
+                  <>
+                    <Body1>{describe.data.suggestion}</Body1>
+                    <Caption1 className={styles.aiNoteMeta}>
+                      {describe.data.model} ·{" "}
+                      {describe.data.input_tokens + describe.data.output_tokens} tokens
+                    </Caption1>
+                  </>
+                )}
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={onDiscard}>Discard</Button>
+              <Button
+                appearance="secondary"
+                onClick={() => describe.mutate()}
+                disabled={describe.isPending}
+              >
+                Regenerate
+              </Button>
+              <Button
+                appearance="primary"
+                onClick={onAccept}
+                disabled={!describe.data || update.isPending}
+              >
+                {update.isPending ? <Spinner size="extra-tiny" /> : "Save"}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </>
   );
 }

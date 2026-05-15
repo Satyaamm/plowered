@@ -60,3 +60,4 @@ coverage.html
 
 # Docker
 .docker/
+.secrets/

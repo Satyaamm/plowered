@@ -15,6 +15,7 @@ import {
 } from "@fluentui/react-components";
 import { Eye20Regular, EyeOff20Regular } from "@fluentui/react-icons";
 import { AuthShell } from "@/components/auth-shell";
+import { InfoLabel } from "@/components/info-label";
 import { useLogin, useResendVerification } from "@/lib/auth-client";
 
 const useStyles = makeStyles({
@@ -76,7 +77,14 @@ function LoginInner() {
       subtitle="Welcome back to your data context platform."
     >
       <form className={styles.form} onSubmit={onSubmit}>
-        <Field label="Work email" required>
+        <Field
+          label={
+            <InfoLabel info="The address you signed up with. If you joined via invitation, use whichever email the invite was sent to.">
+              Work email
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type="email"
             autoComplete="email"
@@ -86,7 +94,14 @@ function LoginInner() {
             disabled={login.isPending}
           />
         </Field>
-        <Field label="Password" required>
+        <Field
+          label={
+            <InfoLabel info="After 5 wrong attempts the account is rate-limited for 15 minutes. Forgot it? Use 'Forgot password' below — you'll get a one-time reset link valid for 24 hours.">
+              Password
+            </InfoLabel>
+          }
+          required
+        >
           <Input
             type={showPw ? "text" : "password"}
             autoComplete="current-password"

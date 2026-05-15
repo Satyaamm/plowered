@@ -51,8 +51,9 @@ const GROUPS: Group[] = [
   {
     heading: "GENERAL",
     items: [
-      { label: "Home",       href: "/",        icon: <Home24Regular />,   tour: "nav-home" },
-      { label: "Search",     href: "/search",  icon: <Search24Regular />, tour: "nav-search" },
+      { label: "Home",       href: "/",        icon: <Home24Regular />,    tour: "nav-home" },
+      { label: "Search",     href: "/search",  icon: <Search24Regular />,  tour: "nav-search" },
+      { label: "Ask",        href: "/ask",     icon: <Sparkle24Regular />, tour: "nav-ask" },
     ],
   },
   {

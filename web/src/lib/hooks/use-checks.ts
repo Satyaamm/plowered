@@ -37,6 +37,7 @@ export function useCreateCheck() {
   return useMutation({
     mutationFn: (c: Partial<Check>) => checksApi.create(c),
     onSuccess: () => qc.invalidateQueries({ queryKey: LIST_KEY }),
+    meta: { successMessage: "Check created" },
   });
 }
 
@@ -48,6 +49,7 @@ export function useUpdateCheck(id: string) {
       qc.invalidateQueries({ queryKey: LIST_KEY });
       qc.invalidateQueries({ queryKey: ["check", id] });
     },
+    meta: { successMessage: "Check saved" },
   });
 }
 
@@ -56,6 +58,7 @@ export function useDeleteCheck() {
   return useMutation({
     mutationFn: (id: string) => checksApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: LIST_KEY }),
+    meta: { successMessage: "Check deleted" },
   });
 }
 
@@ -76,5 +79,6 @@ export function useRunCheck() {
     onSuccess: (_data, args) => {
       qc.invalidateQueries({ queryKey: ["check-runs", args.id] });
     },
+    meta: { successMessage: "Check run started" },
   });
 }
