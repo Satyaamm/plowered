@@ -79,6 +79,8 @@ type Deps struct {
 	Describer          Describer
 	// Asker is the Text-to-SQL surface (#6 feature). Optional.
 	Asker              Asker
+	// Migrator runs SQL→SQL data migration plans (#3 feature). Optional.
+	Migrator           Migrator
 
 	// Indexer + Searcher power /v1/search:semantic. Optional.
 	SearchIndexer  *search.Indexer
@@ -171,6 +173,9 @@ func NewMux(d Deps) *http.ServeMux {
 	}
 	if d.Asker != nil {
 		askHandlers(mux, d.Asker)
+	}
+	if d.Migrator != nil {
+		migrationHandlers(mux, d.Migrator)
 	}
 	if d.Jobs != nil {
 		jobsHandlers(mux, d.Jobs)

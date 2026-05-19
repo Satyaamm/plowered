@@ -77,6 +77,7 @@ type Deps struct {
 	Profiler        apihttp.Profiler
 	Describer       apihttp.Describer
 	Asker           apihttp.Asker
+	Migrator        apihttp.Migrator
 	SearchIndexer   *search.Indexer
 	SearchSearcher  *search.Searcher
 	Jobs            jobs.Repo
@@ -221,6 +222,7 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		Profiler:          deps.Profiler,
 		Describer:         deps.Describer,
 		Asker:             deps.Asker,
+		Migrator:          deps.Migrator,
 		SearchIndexer:     deps.SearchIndexer,
 		SearchSearcher:    deps.SearchSearcher,
 		Jobs:              deps.Jobs,

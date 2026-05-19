@@ -49,6 +49,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
 	"github.com/Satyaamm/plowered/internal/core/asker"
 	"github.com/Satyaamm/plowered/internal/core/describer"
+	"github.com/Satyaamm/plowered/internal/core/migration"
 	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/core/profile"
 	"github.com/Satyaamm/plowered/internal/core/quality"
@@ -334,6 +335,15 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 		Log:       postgres.NewAIQueryStore(pool),
 		Logger:    logger,
 	}
+	// Migration: SQL → SQL data movement. Reuses the warehouse factory
+	// (no new driver code) and lives alongside profile/describer/asker
+	// in the same "needs warehouse access" tier.
+	migrationSvc := &migration.Service{
+		Store:     postgres.NewMigrationStore(pool),
+		Warehouse: warehouseFactory,
+		Conns:     connectionStore,
+		Logger:    logger,
+	}
 	extras := workerExtras{
 		Jobs:       jobsStore,
 		Classifier: classifyOrch,
@@ -390,6 +400,7 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 			Profiler:        profilerSvc,
 			Describer:       describerSvc,
 			Asker:           askerSvc,
+			Migrator:        migrationSvc,
 			SearchIndexer:   searchIndexer,
 			SearchSearcher: &search.Searcher{
 				Catalog:  cat,

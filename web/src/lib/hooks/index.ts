@@ -22,3 +22,4 @@ export * from "./use-team";
 export * from "./use-account";
 export * from "./use-assets";
 export * from "./use-ask";
+export * from "./use-migrations";

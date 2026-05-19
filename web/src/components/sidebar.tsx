@@ -13,6 +13,7 @@ import {
 import {
   Home24Regular,
   Database24Regular,
+  ArrowSwap24Regular,
   Flow24Regular,
   History24Regular,
   CheckmarkCircle24Regular,
@@ -65,8 +66,9 @@ const GROUPS: Group[] = [
   {
     heading: "ORCHESTRATION",
     items: [
-      { label: "Pipelines",  href: "/pipelines", icon: <Flow24Regular />,    tour: "nav-pipelines" },
-      { label: "Runs",       href: "/runs",      icon: <History24Regular />, tour: "nav-runs" },
+      { label: "Pipelines",  href: "/pipelines",  icon: <Flow24Regular />,      tour: "nav-pipelines" },
+      { label: "Runs",       href: "/runs",       icon: <History24Regular />,   tour: "nav-runs" },
+      { label: "Migrations", href: "/migrations", icon: <ArrowSwap24Regular />, tour: "nav-migrations" },
     ],
   },
   {
