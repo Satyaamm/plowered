@@ -40,17 +40,17 @@ func (s *MigrationStore) CreatePlan(ctx context.Context, p *mig.Plan) (*mig.Plan
 			(tenant_id, name,
 			 source_connection_id, source_schema, source_table,
 			 dest_connection_id,   dest_schema,   dest_table,
-			 column_map, mode, write_mode, created_by)
+			 column_map, mode, write_mode, cursor_column, created_by)
 		VALUES ($1::uuid, $2,
 		        $3::uuid, $4, $5,
 		        $6::uuid, $7, $8,
-		        $9::jsonb, $10, $11, NULLIF($12,'')::uuid)
+		        $9::jsonb, $10, $11, $12, NULLIF($13,'')::uuid)
 		RETURNING id::text, created_at, updated_at`
 	row := s.pool.QueryRow(ctx, q,
 		p.TenantID, p.Name,
 		p.SourceConnectionID, p.SourceSchema, p.SourceTable,
 		p.DestConnectionID, p.DestSchema, p.DestTable,
-		mapJSON, string(p.Mode), string(p.WriteMode), p.CreatedBy,
+		mapJSON, string(p.Mode), string(p.WriteMode), p.CursorColumn, p.CreatedBy,
 	)
 	if err := row.Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("insert plan: %w", err)
@@ -63,7 +63,7 @@ func (s *MigrationStore) GetPlan(ctx context.Context, tenantID, planID string) (
 		SELECT id::text, tenant_id::text, name,
 		       source_connection_id::text, source_schema, source_table,
 		       dest_connection_id::text,   dest_schema,   dest_table,
-		       column_map, mode, write_mode,
+		       column_map, mode, write_mode, cursor_column,
 		       COALESCE(created_by::text,''), created_at, updated_at
 		  FROM migration_plans
 		 WHERE tenant_id = $1::uuid AND id = $2::uuid`
@@ -76,7 +76,7 @@ func (s *MigrationStore) ListPlans(ctx context.Context, tenantID string) ([]*mig
 		SELECT id::text, tenant_id::text, name,
 		       source_connection_id::text, source_schema, source_table,
 		       dest_connection_id::text,   dest_schema,   dest_table,
-		       column_map, mode, write_mode,
+		       column_map, mode, write_mode, cursor_column,
 		       COALESCE(created_by::text,''), created_at, updated_at
 		  FROM migration_plans
 		 WHERE tenant_id = $1::uuid
@@ -179,7 +179,7 @@ func scanPlan(row pgx.Row) (*mig.Plan, error) {
 		&p.ID, &p.TenantID, &p.Name,
 		&p.SourceConnectionID, &p.SourceSchema, &p.SourceTable,
 		&p.DestConnectionID, &p.DestSchema, &p.DestTable,
-		&mapJSON, &modeStr, &writeMode,
+		&mapJSON, &modeStr, &writeMode, &p.CursorColumn,
 		&p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

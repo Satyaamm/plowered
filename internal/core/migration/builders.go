@@ -45,6 +45,42 @@ func buildSelect(d profile.Dialect, schema, table string, cols []string, maxRows
 	return q
 }
 
+// buildIncrementalSelect composes:
+//
+//	SELECT cols FROM schema.table
+//	 WHERE cursor > 'lastCursor'
+//	 ORDER BY cursor ASC
+//	 LIMIT batchSize
+//
+// On the very first run (lastCursor empty) the WHERE clause is
+// omitted so we copy from the beginning. The cursor column is quoted
+// per dialect; the cursor value is escaped as a string literal — the
+// warehouse handles type coercion for timestamps and numerics. That's
+// portable but means "id > '99'" sorts lexically before "id > '9'";
+// rely on a strictly-typed cursor column (timestamps and zero-padded
+// IDs are safe; bare ints are not).
+func buildIncrementalSelect(
+	d profile.Dialect,
+	schema, table string,
+	cols []string,
+	cursorCol, lastCursor string,
+	batchSize int,
+) string {
+	tableRef := d.Quote(table)
+	if schema != "" {
+		tableRef = d.Quote(schema) + "." + tableRef
+	}
+	colExpr := quotedJoin(d, cols)
+	curQ := d.Quote(cursorCol)
+	q := "SELECT " + colExpr + " FROM " + tableRef
+	if lastCursor != "" {
+		q += " WHERE " + curQ + " > " + quoteStringLiteral(lastCursor)
+	}
+	q += " ORDER BY " + curQ + " ASC"
+	q += fmt.Sprintf(" LIMIT %d", batchSize)
+	return q
+}
+
 // buildTruncate composes "DELETE FROM table". Not TRUNCATE because
 // TRUNCATE syntax / DDL semantics diverge wildly across warehouses
 // (auto-commit on MySQL, owner-grant required on Snowflake). DELETE

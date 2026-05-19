@@ -47,6 +47,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/pipeline/tasks/taskdeps"
 	"github.com/Satyaamm/plowered/internal/core/aictx"
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/blob"
 	"github.com/Satyaamm/plowered/internal/core/asker"
 	"github.com/Satyaamm/plowered/internal/core/describer"
 	"github.com/Satyaamm/plowered/internal/core/migration"
@@ -338,11 +339,18 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 	// Migration: SQL → SQL data movement. Reuses the warehouse factory
 	// (no new driver code) and lives alongside profile/describer/asker
 	// in the same "needs warehouse access" tier.
+	//
+	// Object storage: when PLOWERED_S3_BUCKET is set we use S3 for
+	// durable artifact storage (migration checkpoints today, profile
+	// snapshots + AI logs in follow-ups). Otherwise an in-memory
+	// store keeps single-process dev working without AWS creds.
+	objectStore := buildObjectStore(ctx, logger)
 	migrationSvc := &migration.Service{
-		Store:     postgres.NewMigrationStore(pool),
-		Warehouse: warehouseFactory,
-		Conns:     connectionStore,
-		Logger:    logger,
+		Store:      postgres.NewMigrationStore(pool),
+		Warehouse:  warehouseFactory,
+		Conns:      connectionStore,
+		Checkpoint: migration.NewBlobCheckpointStore(objectStore),
+		Logger:     logger,
 	}
 	extras := workerExtras{
 		Jobs:       jobsStore,
@@ -679,6 +687,38 @@ func newWarehouseFactory(conns connection.Repo, vault secrets.Vault) *warehouse.
 	}
 
 	return mf
+}
+
+// buildObjectStore returns the durable artifact store. If
+// PLOWERED_S3_BUCKET is set, we wire an S3-backed store using the
+// standard AWS credential chain. Otherwise we fall back to an
+// in-memory store — fine for single-process dev, NOT for production.
+//
+// Optional env: PLOWERED_S3_REGION (default us-east-1),
+// PLOWERED_S3_ENDPOINT (MinIO / R2 compatibility),
+// PLOWERED_S3_PATH_STYLE=1 (path-style addressing for MinIO).
+func buildObjectStore(ctx context.Context, logger *slog.Logger) blob.ObjectStore {
+	bucket := os.Getenv("PLOWERED_S3_BUCKET")
+	if bucket == "" {
+		logger.Info("object_store: PLOWERED_S3_BUCKET unset; using in-memory store (NOT durable)")
+		return blob.NewInMem()
+	}
+	region := os.Getenv("PLOWERED_S3_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
+	s3Store, err := blob.NewS3(ctx, blob.S3Config{
+		Bucket:       bucket,
+		Region:       region,
+		BaseEndpoint: os.Getenv("PLOWERED_S3_ENDPOINT"),
+		UsePathStyle: os.Getenv("PLOWERED_S3_PATH_STYLE") == "1",
+	})
+	if err != nil {
+		logger.Error("object_store: S3 init failed; falling back to in-memory", "err", err)
+		return blob.NewInMem()
+	}
+	logger.Info("object_store: S3 ready", "bucket", bucket, "region", region)
+	return s3Store
 }
 
 // buildEnqueuer picks Asynq when PLOWERED_REDIS_URL is set, sync fallback

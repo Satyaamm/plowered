@@ -228,7 +228,13 @@ function CreatePlanDialog({ onClose }: { onClose: () => void }) {
   const [dstSchema, setDstSchema] = useState("");
   const [dstTable, setDstTable] = useState("");
   const [columnsRaw, setColumnsRaw] = useState("");
+  const [mode, setMode] = useState<"snapshot" | "incremental">("snapshot");
+  const [cursorColumn, setCursorColumn] = useState("");
   const [writeMode, setWriteMode] = useState<"truncate_and_replace" | "append">("truncate_and_replace");
+
+  // Incremental mode requires append + a cursor column. Snapshot
+  // allows either write mode but doesn't use cursor.
+  const effectiveWriteMode = mode === "incremental" ? "append" : writeMode;
 
   const colMap: MigrationColumnMap[] = useMemo(() => {
     return columnsRaw
@@ -239,7 +245,8 @@ function CreatePlanDialog({ onClose }: { onClose: () => void }) {
   }, [columnsRaw]);
 
   const valid =
-    name && srcConn && srcTable && dstConn && dstTable && colMap.length > 0;
+    name && srcConn && srcTable && dstConn && dstTable && colMap.length > 0 &&
+    (mode === "snapshot" || cursorColumn.trim() !== "");
 
   const submit = async () => {
     const body: CreateMigrationPlanInput = {
@@ -251,8 +258,9 @@ function CreatePlanDialog({ onClose }: { onClose: () => void }) {
       dest_schema: dstSchema,
       dest_table: dstTable,
       column_map: colMap,
-      mode: "snapshot",
-      write_mode: writeMode,
+      mode,
+      write_mode: effectiveWriteMode,
+      cursor_column: mode === "incremental" ? cursorColumn.trim() : undefined,
     };
     try {
       await create.mutateAsync(body);
@@ -346,7 +354,7 @@ function CreatePlanDialog({ onClose }: { onClose: () => void }) {
               </Field>
             </div>
 
-            <Subtitle2>Columns + write mode</Subtitle2>
+            <Subtitle2>Columns + run mode</Subtitle2>
             <Field
               label={
                 <InfoLabel info="Comma-separated column names. v0 uses identity mapping — the same column name on both sides. Full src→dest mapping is in the next iteration.">
@@ -363,23 +371,59 @@ function CreatePlanDialog({ onClose }: { onClose: () => void }) {
             </Field>
             <Field
               label={
-                <InfoLabel info="truncate_and_replace clears the destination table before writing; append adds rows without clearing.">
-                  Write mode
+                <InfoLabel info="Snapshot copies the entire source table on every run. Incremental copies only rows newer than the last successful run (tracked by the cursor column).">
+                  Mode
                 </InfoLabel>
               }
             >
               <Dropdown
-                value={writeMode}
-                selectedOptions={[writeMode]}
-                onOptionSelect={(_, d) => setWriteMode(d.optionValue as "truncate_and_replace" | "append")}
+                value={mode}
+                selectedOptions={[mode]}
+                onOptionSelect={(_, d) => setMode(d.optionValue as "snapshot" | "incremental")}
               >
-                <Option value="truncate_and_replace">truncate_and_replace</Option>
-                <Option value="append">append</Option>
+                <Option value="snapshot">snapshot — copy everything each run</Option>
+                <Option value="incremental">incremental — only new rows since last run</Option>
               </Dropdown>
             </Field>
+            {mode === "incremental" && (
+              <Field
+                label={
+                  <InfoLabel info="A monotonic column the runner orders by and remembers across runs (e.g. updated_at, sequential id). Must be present in the source table and one of the columns above.">
+                    Cursor column
+                  </InfoLabel>
+                }
+                required
+              >
+                <Input
+                  value={cursorColumn}
+                  onChange={(_, d) => setCursorColumn(d.value)}
+                  placeholder="updated_at"
+                />
+              </Field>
+            )}
+            {mode === "snapshot" && (
+              <Field
+                label={
+                  <InfoLabel info="truncate_and_replace clears the destination table before writing; append adds rows without clearing.">
+                    Write mode
+                  </InfoLabel>
+                }
+              >
+                <Dropdown
+                  value={writeMode}
+                  selectedOptions={[writeMode]}
+                  onOptionSelect={(_, d) => setWriteMode(d.optionValue as "truncate_and_replace" | "append")}
+                >
+                  <Option value="truncate_and_replace">truncate_and_replace</Option>
+                  <Option value="append">append</Option>
+                </Dropdown>
+              </Field>
+            )}
 
             <Caption1 className={styles.meta}>
-              Snapshot mode is the only supported mode today. Incremental + CDC ship in a follow-up.
+              {mode === "incremental"
+                ? "Incremental mode requires object storage configured (PLOWERED_S3_BUCKET) so checkpoints survive restarts."
+                : "Snapshot mode works against any SQL source + destination. CDC mode ships in a follow-up."}
             </Caption1>
           </div>
         </DialogContent>

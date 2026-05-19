@@ -28,10 +28,11 @@ type ConnectionReader interface {
 // (one less responsibility on this struct). The Service is the only
 // type the HTTP layer should hold.
 type Service struct {
-	Store     Store
-	Warehouse *warehouse.MultiFactory
-	Conns     ConnectionReader
-	Logger    *slog.Logger
+	Store      Store
+	Warehouse  *warehouse.MultiFactory
+	Conns      ConnectionReader
+	Checkpoint CheckpointStore // optional; required for ModeIncremental
+	Logger     *slog.Logger
 
 	// BatchSize controls how many rows we INSERT per dest round-trip.
 	// 500 is a comfortable default — small enough that one bad batch
@@ -101,7 +102,17 @@ func (s *Service) RunPlan(ctx context.Context, tenantID, planID string) (*Run, e
 	if err != nil {
 		return nil, fmt.Errorf("load plan: %w", err)
 	}
-	if plan.Mode != ModeSnapshot {
+	switch plan.Mode {
+	case ModeSnapshot:
+		// supported
+	case ModeIncremental:
+		if plan.CursorColumn == "" {
+			return nil, errors.New("migration: incremental mode requires cursor_column")
+		}
+		if s.Checkpoint == nil {
+			return nil, errors.New("migration: incremental mode requires a checkpoint store (configure object storage)")
+		}
+	default:
 		return nil, fmt.Errorf("%w: %s", ErrModeUnimplemented, plan.Mode)
 	}
 
@@ -117,7 +128,14 @@ func (s *Service) RunPlan(ctx context.Context, tenantID, planID string) (*Run, e
 		return nil, fmt.Errorf("start run: %w", err)
 	}
 
-	rowsRead, rowsWritten, runErr := s.runSnapshot(runCtx, tenantID, plan)
+	var rowsRead, rowsWritten int64
+	var runErr error
+	switch plan.Mode {
+	case ModeSnapshot:
+		rowsRead, rowsWritten, runErr = s.runSnapshot(runCtx, tenantID, plan)
+	case ModeIncremental:
+		rowsRead, rowsWritten, runErr = s.runIncremental(runCtx, tenantID, plan)
+	}
 
 	status := RunStatusSucceeded
 	errStr := ""
@@ -240,6 +258,162 @@ func (s *Service) runSnapshot(ctx context.Context, tenantID string, plan *Plan) 
 	return rowsRead, rowsWritten, nil
 }
 
+// runIncremental moves rows newer than the persisted checkpoint. On
+// first run (no checkpoint) it copies everything; on subsequent runs
+// it picks up from where the previous successful flush left off.
+//
+// Strategy:
+//
+//  1. Load checkpoint from object storage (nil ⇒ start from beginning).
+//  2. Loop:
+//     - Read source: SELECT cols FROM src WHERE cursor > $last
+//       ORDER BY cursor ASC LIMIT batch
+//     - INSERT batch into dest (append-only — TRUNCATE doesn't make
+//       sense for incremental).
+//     - Persist new checkpoint (= max cursor seen in this batch).
+//     - Repeat until LIMIT batch returns fewer rows (end of stream).
+//
+// Failure recovery: if the run dies after step 2's flush but before
+// the step 2 checkpoint, the next run replays the same batch. That's
+// a known duplicate-row risk we accept in v0 (idempotent upsert
+// semantics are a follow-up). The dest table should treat
+// "(primary_key, cursor)" as the dedupe key if it cares.
+func (s *Service) runIncremental(ctx context.Context, tenantID string, plan *Plan) (int64, int64, error) {
+	srcConn, err := s.Conns.Get(ctx, tenantID, plan.SourceConnectionID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("load source conn: %w", err)
+	}
+	destConn, err := s.Conns.Get(ctx, tenantID, plan.DestConnectionID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("load dest conn: %w", err)
+	}
+	if !srcConn.Type.IsSQL() || !destConn.Type.IsSQL() {
+		return 0, 0, fmt.Errorf("migration: incremental mode requires SQL source + dest")
+	}
+	srcDialect, err := profile.PickDialect(srcConn.Type)
+	if err != nil {
+		return 0, 0, fmt.Errorf("source dialect: %w", err)
+	}
+	destDialect, err := profile.PickDialect(destConn.Type)
+	if err != nil {
+		return 0, 0, fmt.Errorf("dest dialect: %w", err)
+	}
+
+	srcExec, err := s.Warehouse.Open(ctx, tenantID, plan.SourceConnectionID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("open source: %w", err)
+	}
+	destExec, err := s.Warehouse.Open(ctx, tenantID, plan.DestConnectionID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("open dest: %w", err)
+	}
+
+	srcCols, destCols := splitColumnMap(plan.ColumnMap)
+	if len(srcCols) == 0 {
+		return 0, 0, errors.New("migration: column_map is empty")
+	}
+	// Make sure the cursor column is one of the columns the source
+	// SELECT returns, so we can extract the next checkpoint from each
+	// row without a separate query.
+	cursorIdx := indexOf(srcCols, plan.CursorColumn)
+	if cursorIdx < 0 {
+		// Auto-add cursor column to the select if not present.
+		srcCols = append(srcCols, plan.CursorColumn)
+		cursorIdx = len(srcCols) - 1
+	}
+
+	cp, err := s.Checkpoint.Load(ctx, plan.ID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("load checkpoint: %w", err)
+	}
+	lastCursor := ""
+	if cp != nil {
+		lastCursor = cp.LastCursorValue
+	}
+
+	batchSize := s.BatchSize
+	if batchSize <= 0 {
+		batchSize = 500
+	}
+
+	var rowsRead, rowsWritten int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return rowsRead, rowsWritten, err
+		}
+		selectSQL := buildIncrementalSelect(srcDialect, plan.SourceSchema, plan.SourceTable,
+			srcCols, plan.CursorColumn, lastCursor, batchSize)
+		rows, err := srcExec.Query(ctx, selectSQL)
+		if err != nil {
+			return rowsRead, rowsWritten, fmt.Errorf("select batch: %w", err)
+		}
+
+		batch := make([][]any, 0, batchSize)
+		maxCursorInBatch := lastCursor
+		for rows.Next() {
+			rowsRead++
+			scanDest := make([]any, len(srcCols))
+			scanPtrs := make([]any, len(srcCols))
+			for i := range scanDest {
+				scanPtrs[i] = &scanDest[i]
+			}
+			if err := rows.Scan(scanPtrs...); err != nil {
+				rows.Close()
+				return rowsRead, rowsWritten, fmt.Errorf("scan: %w", err)
+			}
+			if c := fmt.Sprint(scanDest[cursorIdx]); c > maxCursorInBatch {
+				maxCursorInBatch = c
+			}
+			batch = append(batch, scanDest)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return rowsRead, rowsWritten, fmt.Errorf("iterate: %w", err)
+		}
+		rows.Close()
+
+		if len(batch) == 0 {
+			// End of stream — checkpoint stays at its current value.
+			return rowsRead, rowsWritten, nil
+		}
+
+		// Build the dest INSERT using the destCols (without cursor if
+		// it was auto-added). If cursor was auto-added, drop the last
+		// column from each row before insert so dest schema matches.
+		toWrite := batch
+		writeCols := destCols
+		if cursorIdx == len(srcCols)-1 && len(destCols) == len(srcCols)-1 {
+			toWrite = stripLastColumn(batch)
+		}
+		insertSQL := buildInsert(destDialect, plan.DestSchema, plan.DestTable, writeCols, toWrite)
+		if _, err := destExec.Query(ctx, insertSQL); err != nil {
+			return rowsRead, rowsWritten, fmt.Errorf("insert batch (written=%d): %w", rowsWritten, err)
+		}
+		rowsWritten += int64(len(batch))
+
+		// Persist checkpoint AFTER successful dest write. If save
+		// itself fails we keep going — the next batch will overwrite
+		// it. Failures here only matter on process death between save
+		// attempts.
+		lastCursor = maxCursorInBatch
+		next := &Checkpoint{
+			LastCursorValue: lastCursor,
+			RowsProcessed:   rowsRead,
+			UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+		}
+		if err := s.Checkpoint.Save(ctx, plan.ID, next); err != nil {
+			s.logger().WarnContext(ctx, "migration: checkpoint save", "err", err)
+		}
+		if s.MaxRows > 0 && rowsRead >= s.MaxRows {
+			return rowsRead, rowsWritten, nil
+		}
+		if int64(len(batch)) < int64(batchSize) {
+			// Less than a full batch ⇒ caught up.
+			return rowsRead, rowsWritten, nil
+		}
+	}
+}
+
 func (s *Service) logger() *slog.Logger {
 	if s.Logger != nil {
 		return s.Logger
@@ -276,6 +450,14 @@ func validatePlan(p *Plan) error {
 	if p.WriteMode != WriteModeTruncate && p.WriteMode != WriteModeAppend {
 		return fmt.Errorf("plan: unknown write_mode %q", p.WriteMode)
 	}
+	if p.Mode == ModeIncremental {
+		if p.CursorColumn == "" {
+			return errors.New("plan: incremental mode requires cursor_column")
+		}
+		if p.WriteMode == WriteModeTruncate {
+			return errors.New("plan: incremental mode cannot use truncate_and_replace (incremental implies append)")
+		}
+	}
 	return nil
 }
 
@@ -287,4 +469,31 @@ func splitColumnMap(cm []ColumnMap) (src, dest []string) {
 		dest[i] = m.DestCol
 	}
 	return src, dest
+}
+
+// indexOf returns the position of needle in cols, case-insensitive,
+// or -1 if absent.
+func indexOf(cols []string, needle string) int {
+	needle = strings.ToLower(needle)
+	for i, c := range cols {
+		if strings.ToLower(c) == needle {
+			return i
+		}
+	}
+	return -1
+}
+
+// stripLastColumn returns each row with its last element removed.
+// Used when the runner auto-appends the cursor column to source SELECT
+// but the dest table doesn't carry it.
+func stripLastColumn(rows [][]any) [][]any {
+	out := make([][]any, len(rows))
+	for i, r := range rows {
+		if len(r) == 0 {
+			out[i] = r
+			continue
+		}
+		out[i] = r[:len(r)-1]
+	}
+	return out
 }

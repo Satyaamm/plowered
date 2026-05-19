@@ -25,6 +25,7 @@ export interface MigrationPlan {
   column_map: MigrationColumnMap[];
   mode: MigrationMode;
   write_mode: MigrationWriteMode;
+  cursor_column?: string;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -94,6 +95,7 @@ export interface CreateMigrationPlanInput {
   column_map: MigrationColumnMap[];
   mode: MigrationMode;
   write_mode: MigrationWriteMode;
+  cursor_column?: string;
 }
 
 export function useCreateMigrationPlan() {

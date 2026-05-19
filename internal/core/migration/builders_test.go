@@ -93,6 +93,59 @@ func TestFormatLiteralNumericTypes(t *testing.T) {
 	}
 }
 
+func TestBuildIncrementalSelect(t *testing.T) {
+	d, _ := profile.PickDialect(connection.TypePostgres)
+
+	// First run: no last cursor → no WHERE clause.
+	got := buildIncrementalSelect(d, "public", "events", []string{"id", "ts"}, "ts", "", 500)
+	if strings.Contains(got, "WHERE") {
+		t.Errorf("first-run select should have no WHERE, got: %s", got)
+	}
+	for _, want := range []string{
+		`SELECT "id", "ts" FROM "public"."events"`,
+		`ORDER BY "ts" ASC`,
+		`LIMIT 500`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in: %s", want, got)
+		}
+	}
+
+	// Subsequent run: last cursor present → WHERE clause with escaped literal.
+	got = buildIncrementalSelect(d, "", "events", []string{"id", "ts"}, "ts", "2024-01-15T10:00:00Z", 500)
+	for _, want := range []string{
+		`WHERE "ts" > '2024-01-15T10:00:00Z'`,
+		`ORDER BY "ts" ASC`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in: %s", want, got)
+		}
+	}
+
+	// Cursor with embedded single quote is properly doubled.
+	got = buildIncrementalSelect(d, "", "events", []string{"id"}, "name", "O'Brien", 100)
+	if !strings.Contains(got, "'O''Brien'") {
+		t.Errorf("cursor literal should escape quotes, got: %s", got)
+	}
+}
+
+func TestStripLastColumn(t *testing.T) {
+	in := [][]any{{1, "a", "c1"}, {2, "b", "c2"}}
+	out := stripLastColumn(in)
+	if len(out) != 2 || len(out[0]) != 2 || out[0][0] != 1 || out[0][1] != "a" {
+		t.Errorf("strip failed: %v", out)
+	}
+}
+
+func TestIndexOf(t *testing.T) {
+	if indexOf([]string{"a", "B", "c"}, "b") != 1 {
+		t.Error("case-insensitive match failed")
+	}
+	if indexOf([]string{"a", "b"}, "z") != -1 {
+		t.Error("missing should return -1")
+	}
+}
+
 func TestValidatePlan(t *testing.T) {
 	cases := []struct {
 		name    string

@@ -77,9 +77,15 @@ type Plan struct {
 	ColumnMap          []ColumnMap `json:"column_map"`
 	Mode               Mode        `json:"mode"`
 	WriteMode          WriteMode   `json:"write_mode"`
-	CreatedBy          string      `json:"created_by"`
-	CreatedAt          time.Time   `json:"created_at"`
-	UpdatedAt          time.Time   `json:"updated_at"`
+
+	// CursorColumn is the monotonic column (e.g. updated_at, id) the
+	// runner sorts + paginates by in incremental mode. Required when
+	// Mode == ModeIncremental. Ignored for snapshot mode.
+	CursorColumn string `json:"cursor_column,omitempty"`
+
+	CreatedBy string    `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // RunStatus is the lifecycle of one execution attempt.
