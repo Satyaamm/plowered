@@ -77,6 +77,44 @@ func updateAssetHandler(store storage.Store) http.HandlerFunc {
 	}
 }
 
+// updateAssetOwnersHandler is a focused partial-update endpoint for
+// the owners field. The general updateAssetHandler does a full replace
+// (every field of the asset row gets overwritten) which means a
+// "change owner" click would have to fetch-merge-PUT to avoid blanking
+// description / tags / trust / etc. This endpoint does the merge
+// server-side: fetch existing, swap Owners, save.
+//
+// Atomic at the per-asset row level (one transaction, one update).
+// Doesn't cover concurrent owner edits from two tabs — last write
+// wins, same as the rest of the catalog mutations.
+func updateAssetOwnersHandler(store storage.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Owners []string `json:"owners"`
+		}
+		if err := decodeJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
+			return
+		}
+		existing, err := store.GetAsset(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		existing.Owners = body.Owners
+		if err := graph.ValidateAsset(existing); err != nil {
+			writeError(w, err)
+			return
+		}
+		got, err := store.UpdateAsset(r.Context(), existing)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, got)
+	}
+}
+
 func deleteAssetHandler(store storage.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := store.DeleteAsset(r.Context(), r.PathValue("id")); err != nil {

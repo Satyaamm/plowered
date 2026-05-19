@@ -22,6 +22,7 @@ import { OverviewTab } from "@/components/asset-tabs/overview";
 import { SchemaTab } from "@/components/asset-tabs/schema";
 import { LineageTab } from "@/components/asset-tabs/lineage";
 import { ProfileTab } from "@/components/asset-tabs/profile";
+import { ExploreTab } from "@/components/asset-tabs/explore";
 import { QualityTab } from "@/components/asset-tabs/quality";
 import { ActivityTab } from "@/components/asset-tabs/activity";
 
@@ -40,6 +41,7 @@ const TABS = [
   { key: "overview", label: "Overview" },
   { key: "schema",   label: "Schema",   restrictTo: ["table", "view", "schema"] as string[] | undefined },
   { key: "profile",  label: "Profile",  restrictTo: ["table", "view"] as string[] | undefined },
+  { key: "explore",  label: "Explore",  restrictTo: ["table", "view"] as string[] | undefined },
   { key: "lineage",  label: "Lineage" },
   { key: "quality",  label: "Quality" },
   { key: "activity", label: "Activity" },
@@ -150,6 +152,7 @@ export default function AssetPage({
         {tab === "overview" && <OverviewTab asset={a} />}
         {tab === "schema"   && <SchemaTab assetId={a.id} />}
         {tab === "profile"  && <ProfileTab assetId={a.id} />}
+        {tab === "explore"  && <ExploreTab assetId={a.id} />}
         {tab === "lineage"  && <LineageTab assetId={a.id} />}
         {tab === "quality"  && <QualityTab assetId={a.id} qualifiedName={a.qualified_name} />}
         {tab === "activity" && <ActivityTab assetId={a.id} />}

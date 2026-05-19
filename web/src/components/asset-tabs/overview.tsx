@@ -29,7 +29,16 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { glossaryApi } from "@/lib/api";
-import { useDescribeAsset, useUpdateAsset } from "@/lib/hooks";
+import {
+  useDescribeAsset,
+  useMembers,
+  useUpdateAsset,
+  useUpdateAssetOwners,
+} from "@/lib/hooks";
+import {
+  Person16Regular,
+  Edit16Regular,
+} from "@fluentui/react-icons";
 import type { Asset } from "@/lib/types";
 
 const useStyles = makeStyles({
@@ -92,7 +101,10 @@ export function OverviewTab({ asset }: { asset: Asset }) {
   const trust = asset.trust ?? "unverified";
   const isCertified = trust === "certified" || trust === "reviewed";
   const props = (asset.properties ?? {}) as Record<string, any>;
-  const isTableLike = ["table", "view"].includes(asset.type ?? "");
+  // AI describe works on tables, views, AND columns — the describer
+  // service falls back to BuildForColumn (parent-table context) when
+  // given a column asset id.
+  const canDescribe = ["table", "view", "column"].includes(asset.type ?? "");
 
   return (
     <div className={styles.body}>
@@ -100,7 +112,7 @@ export function OverviewTab({ asset }: { asset: Asset }) {
         <div className={styles.panel}>
           <div className={styles.panelHeader}>
             <Subtitle2>Description</Subtitle2>
-            {isTableLike && <AISuggestButton assetId={asset.id} />}
+            {canDescribe && <AISuggestButton assetId={asset.id} />}
           </div>
           {asset.description ? (
             <Body1>{asset.description}</Body1>
@@ -146,9 +158,9 @@ export function OverviewTab({ asset }: { asset: Asset }) {
                 {trust}
               </Badge>
             </span>
-            <span className={styles.k}>Owner</span>
+            <span className={styles.k}>Owners</span>
             <span className={styles.v}>
-              {(asset.owners ?? []).length > 0 ? asset.owners!.join(", ") : "—"}
+              <OwnerPicker assetId={asset.id} owners={asset.owners ?? []} />
             </span>
             {props.connection && (
               <>
@@ -336,6 +348,115 @@ function AssetTerms({ assetId }: { assetId: string }) {
 // AISuggestButton is the "Suggest with AI" trigger + review dialog.
 // The mutation is silent (the dialog IS the feedback); accept fires a
 // noisy toast via useUpdateAsset.
+// OwnerPicker shows the current owners as inline chips and pops a
+// small dialog to add/remove. The Members list is fetched once and
+// cached — owners are stored by user_id but rendered by display name
+// + email for legibility.
+function OwnerPicker({ assetId, owners }: { assetId: string; owners: string[] }) {
+  const members = useMembers();
+  const update = useUpdateAssetOwners(assetId);
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<string[]>(owners);
+
+  // Reset to server truth when the dialog opens — covers the case
+  // where someone else changed owners between this user's edits.
+  const onOpenChange = (next: boolean) => {
+    if (next) setSelected(owners);
+    setOpen(next);
+  };
+
+  const byId = new Map(
+    (members.data ?? []).map((m) => [m.user_id, m]),
+  );
+  const ownerLabels = owners.map((id) => {
+    const m = byId.get(id);
+    return m?.full_name || m?.email || id;
+  });
+
+  const onSave = async () => {
+    await update.mutateAsync(selected);
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      {ownerLabels.length === 0 ? (
+        <Text style={{ color: tokens.colorNeutralForeground3, fontStyle: "italic" }}>
+          unassigned
+        </Text>
+      ) : (
+        ownerLabels.map((name, i) => (
+          <Badge key={i} appearance="tint" color="brand" icon={<Person16Regular />}>
+            {name}
+          </Badge>
+        ))
+      )}
+      <Dialog open={open} onOpenChange={(_, d) => onOpenChange(d.open)}>
+        <Button
+          size="small"
+          appearance="subtle"
+          icon={<Edit16Regular />}
+          onClick={() => onOpenChange(true)}
+        >
+          Edit
+        </Button>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Set owners</DialogTitle>
+            <DialogContent>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 360 }}>
+                <Text style={{ color: tokens.colorNeutralForeground3, fontSize: 12 }}>
+                  Owners are accountable for the asset. Policies and alerts use this list as the escalation target.
+                </Text>
+                {members.isLoading && <Spinner size="extra-tiny" />}
+                {(members.data ?? []).map((m) => {
+                  const checked = selected.includes(m.user_id);
+                  return (
+                    <label
+                      key={m.user_id}
+                      style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelected((prev) => Array.from(new Set([...prev, m.user_id])));
+                          } else {
+                            setSelected((prev) => prev.filter((id) => id !== m.user_id));
+                          }
+                        }}
+                      />
+                      <Text>
+                        {m.full_name || m.email}
+                        {m.full_name && (
+                          <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
+                            {" "}· {m.email}
+                          </Caption1>
+                        )}
+                      </Text>
+                    </label>
+                  );
+                })}
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setOpen(false)}>Cancel</Button>
+              <Button
+                appearance="primary"
+                onClick={onSave}
+                disabled={update.isPending}
+              >
+                {update.isPending ? <Spinner size="extra-tiny" /> : "Save"}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+    </div>
+  );
+}
+
 function AISuggestButton({ assetId }: { assetId: string }) {
   const styles = useStyles();
   const [open, setOpen] = useState(false);

@@ -73,6 +73,52 @@ func (s *AIQueryStore) GetExecution(ctx context.Context, tenantID, executionID s
 	return e, nil
 }
 
+// ListExecutions returns the tenant's most recent generations, newest
+// first. Used by /v1/ai:ask/history. limit ≤ 0 falls back to 100;
+// the SQL caps at 500 to bound a runaway request.
+func (s *AIQueryStore) ListExecutions(ctx context.Context, tenantID string, limit int) ([]*asker.Execution, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	const q = `
+		SELECT id::text, tenant_id::text, connection_id::text, question,
+		       generated_sql, model, status, generated_at,
+		       executed_at, row_count, elapsed_ms, error
+		  FROM ai_query_executions
+		 WHERE tenant_id = $1::uuid
+		 ORDER BY generated_at DESC
+		 LIMIT $2`
+	rows, err := s.pool.Query(ctx, q, tenantID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list ai_query_executions: %w", err)
+	}
+	defer rows.Close()
+	var out []*asker.Execution
+	for rows.Next() {
+		e := &asker.Execution{}
+		var execAt *time.Time
+		var rowCount *int
+		var elapsedMs *int64
+		var errStr *string
+		if err := rows.Scan(
+			&e.ID, &e.TenantID, &e.ConnectionID, &e.Question,
+			&e.GeneratedSQL, &e.Model, &e.Status, &e.GeneratedAt,
+			&execAt, &rowCount, &elapsedMs, &errStr,
+		); err != nil {
+			return nil, err
+		}
+		e.ExecutedAt = execAt
+		e.RowCount = rowCount
+		e.ElapsedMs = elapsedMs
+		e.Error = errStr
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (s *AIQueryStore) RecordExecuted(ctx context.Context, tenantID, executionID string, rowCount int, elapsedMs int64, errStr string) error {
 	status := "executed"
 	if errStr != "" {

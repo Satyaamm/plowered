@@ -55,6 +55,10 @@ type Log interface {
 	RecordGenerated(ctx context.Context, params RecordGeneratedParams) error
 	GetExecution(ctx context.Context, tenantID, executionID string) (*Execution, error)
 	RecordExecuted(ctx context.Context, tenantID, executionID string, rowCount int, elapsedMs int64, errStr string) error
+	// ListExecutions returns the tenant's most recent generations,
+	// newest first. Used by the /ask history page. limit ≤ 0 returns
+	// a default page (100).
+	ListExecutions(ctx context.Context, tenantID string, limit int) ([]*Execution, error)
 }
 
 // RecordGeneratedParams is the explicit input to Log.RecordGenerated.
@@ -230,6 +234,16 @@ func (s *Service) Ask(ctx context.Context, tenantID, connectionID, question, gen
 	// The Log impl sets gen.ExecutionID on the in-place struct as it
 	// inserts the row. Callers get it back on the response.
 	return gen, nil
+}
+
+// History returns the tenant's most recent ask executions, newest
+// first. Thin pass-through to the Log; lives here so the HTTP layer
+// only ever holds *asker.Service.
+func (s *Service) History(ctx context.Context, tenantID string, limit int) ([]*Execution, error) {
+	if s.Log == nil {
+		return nil, errors.New("asker: service not fully configured")
+	}
+	return s.Log.ListExecutions(ctx, tenantID, limit)
 }
 
 // Run executes a previously-generated SQL via the warehouse. Re-runs

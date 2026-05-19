@@ -48,3 +48,18 @@ export function useUpdateAsset(assetId: string) {
     meta: { successMessage: "Description saved" },
   });
 }
+
+// useUpdateAssetOwners is the focused partial-update for the owners
+// field. Server-side merge (no fetch-then-PATCH round-trip from the
+// client) keeps the operation atomic.
+export function useUpdateAssetOwners(assetId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (owners: string[]) =>
+      call<unknown>("PATCH", `/v1/assets/${assetId}/owners`, { owners }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["asset", assetId] });
+    },
+    meta: { successMessage: "Owners updated" },
+  });
+}

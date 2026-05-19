@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   Badge,
@@ -115,6 +116,11 @@ export default function AskPage() {
         title="Ask"
         subtitle="Ask a question in plain English. Plowered finds the relevant tables, drafts a SELECT, and waits for your go-ahead before running it."
         crumbs={[{ label: "Home", href: "/" }, { label: "Ask" }]}
+        actions={
+          <Link href="/ask/history">
+            <Button>History</Button>
+          </Link>
+        }
       />
 
       <Card className={styles.panel}>

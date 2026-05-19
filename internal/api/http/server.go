@@ -233,6 +233,7 @@ func registerCatalog(mux *http.ServeMux, store storage.Store) {
 	mux.HandleFunc("POST /v1/assets",                    createAssetHandler(store))
 	mux.HandleFunc("GET /v1/assets/{id}",                getAssetHandler(store))
 	mux.HandleFunc("PATCH /v1/assets/{id}",              updateAssetHandler(store))
+	mux.HandleFunc("PATCH /v1/assets/{id}/owners",       updateAssetOwnersHandler(store))
 	mux.HandleFunc("DELETE /v1/assets/{id}",             deleteAssetHandler(store))
 	mux.HandleFunc("GET /v1/assets:byQualifiedName",     getByQNHandler(store))
 	mux.HandleFunc("POST /v1/assets:search",             searchAssetsHandler(store))

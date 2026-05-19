@@ -35,6 +35,40 @@ export function useAskGenerate() {
   });
 }
 
+// AskHistoryEntry mirrors asker.Execution on the backend — one row
+// per generation. status moves "generated" → "executed" | "failed".
+export interface AskHistoryEntry {
+  ID: string;
+  TenantID: string;
+  ConnectionID: string;
+  Question: string;
+  GeneratedSQL: string;
+  Model: string;
+  Status: "generated" | "executed" | "failed";
+  GeneratedAt: string;
+  ExecutedAt?: string;
+  RowCount?: number;
+  ElapsedMs?: number;
+  Error?: string;
+}
+
+// useAskHistory pulls the tenant's recent /ask executions. Used by the
+// history page; the result is cached short so re-runs surface quickly.
+import { useQuery } from "@tanstack/react-query";
+export function useAskHistory(limit = 100) {
+  return useQuery({
+    queryKey: ["ask-history", limit],
+    queryFn: async () => {
+      const d = await call<{ executions: AskHistoryEntry[] }>(
+        "GET",
+        `/v1/ai:ask/history?limit=${limit}`,
+      );
+      return d.executions ?? [];
+    },
+    staleTime: 10_000,
+  });
+}
+
 // useAskRun executes a previously-generated SQL via the warehouse.
 // Silent on success — the results table itself is the feedback.
 export function useAskRun(executionId: string | null) {
