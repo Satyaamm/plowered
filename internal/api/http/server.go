@@ -175,7 +175,7 @@ func NewMux(d Deps) *http.ServeMux {
 		askHandlers(mux, d.Asker)
 	}
 	if d.Migrator != nil {
-		migrationHandlers(mux, d.Migrator)
+		migrationHandlers(mux, d.Migrator, d.Enqueuer)
 	}
 	if d.Jobs != nil {
 		jobsHandlers(mux, d.Jobs)

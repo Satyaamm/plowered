@@ -77,6 +77,15 @@ type Handlers struct {
 	// SearchIndexer re-embeds every asset for the tenant. Required by
 	// HandleSearchReindex.
 	SearchIndexer *search.Indexer
+	// MigrationExecutor runs an already-created migration run by ID.
+	// Required by HandleMigrationRun. Concrete impl is *migration.Service.
+	MigrationExecutor MigrationExecutor
+}
+
+// MigrationExecutor is the worker-side surface migration jobs need. Kept
+// narrow so tests can stub without dragging in the whole Service.
+type MigrationExecutor interface {
+	ExecuteRun(ctx context.Context, tenantID, runID string) error
 }
 
 func (h *Handlers) logger() *slog.Logger {
@@ -293,6 +302,33 @@ func (h *Handlers) HandleClassifyConnection(ctx context.Context, raw []byte) err
 	h.logger().InfoContext(ctx, "classify finished",
 		"tenant", p.TenantID, "connection", p.ConnectionID, "job", p.JobID,
 		"tables", run.Tables, "tagged", run.Tagged)
+	return nil
+}
+
+// HandleMigrationRun executes a migration run that was already persisted
+// (status=running) by the HTTP layer. The executor flips the row to
+// succeeded/failed on completion and writes the row counters. Errors are
+// returned to Asynq for visibility but the worker's MaxRetry is 0 — a
+// half-finished migration is worse than a clean failure.
+func (h *Handlers) HandleMigrationRun(ctx context.Context, raw []byte) error {
+	var p MigrationRunPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return fmt.Errorf("worker: bad migration payload: %w", err)
+	}
+	if p.TenantID == "" || p.RunID == "" {
+		return fmt.Errorf("worker: migration payload missing tenant or run id")
+	}
+	if h.MigrationExecutor == nil {
+		return fmt.Errorf("worker: migration executor not configured")
+	}
+	ctx = storage.WithTenant(ctx, p.TenantID)
+	if err := h.MigrationExecutor.ExecuteRun(ctx, p.TenantID, p.RunID); err != nil {
+		h.logger().ErrorContext(ctx, "migration run failed",
+			"tenant", p.TenantID, "plan", p.PlanID, "run", p.RunID, "err", err)
+		return err
+	}
+	h.logger().InfoContext(ctx, "migration run finished",
+		"tenant", p.TenantID, "plan", p.PlanID, "run", p.RunID)
 	return nil
 }
 

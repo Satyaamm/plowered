@@ -12,13 +12,17 @@ import (
 )
 
 // Channel delivers notifications. Concrete impls: log (built-in),
-// webhook (built-in), and any custom sub-package.
+// webhook (built-in), slack, email, and any custom sub-package.
 type Channel interface {
 	// Kind identifies the channel type ("log", "webhook", "email", …).
 	Kind() string
-	// Deliver attempts to send one notification. Implementations MUST be safe
-	// to retry — duplicate calls with the same Delivery.ID should be no-ops.
-	Deliver(ctx context.Context, d Delivery) error
+	// Deliver attempts to send one notification. The dispatcher loads the
+	// matching ChannelConfig from the store and passes it through so the
+	// channel impl can read its per-instance settings (URL, recipients,
+	// etc.) without a second store lookup. Implementations MUST be safe to
+	// retry — duplicate calls with the same Delivery.IdempotencyKey should
+	// be no-ops at the receiver.
+	Deliver(ctx context.Context, cfg *ChannelConfig, d Delivery) error
 }
 
 // Rule decides which events flow to which channels.

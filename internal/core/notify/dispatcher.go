@@ -100,7 +100,7 @@ func (d *Dispatcher) deliverOne(ctx context.Context, r Rule, e events.Event) {
 	saved.Attempts++
 	_ = d.Store.UpdateDelivery(ctx, saved)
 
-	if err := impl.Deliver(ctx, *saved); err != nil {
+	if err := impl.Deliver(ctx, channel, *saved); err != nil {
 		saved.Status = DeliveryFailed
 		saved.LastError = err.Error()
 	} else {

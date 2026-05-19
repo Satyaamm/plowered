@@ -350,12 +350,14 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 		Warehouse:  warehouseFactory,
 		Conns:      connectionStore,
 		Checkpoint: migration.NewBlobCheckpointStore(objectStore),
+		Events:     bus,
 		Logger:     logger,
 	}
 	extras := workerExtras{
-		Jobs:       jobsStore,
-		Classifier: classifyOrch,
-		Indexer:    searchIndexer,
+		Jobs:              jobsStore,
+		Classifier:        classifyOrch,
+		Indexer:           searchIndexer,
+		MigrationExecutor: migrationSvc,
 	}
 	enq, enqClose, err := buildEnqueuer(logger, pStore, qStore, pool, bus, connectionStore, vault, logStore, extras)
 	if err != nil {
@@ -378,11 +380,23 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 	identityStore := postgres.NewIdentityStore(pool)
 	emailSender := buildEmailSender(logger)
 	authCfg := buildAuthCfg(logger)
+	notifyStore := postgres.NewNotifyStore(pool)
+	// Dispatcher subscribes to the event bus and turns matching events
+	// into Delivery rows on the configured channels. Without this wiring
+	// notify rules persist but never fire, which was the gap until this
+	// session — now check/migration lifecycle events route through here.
+	notifyDispatcher := notify.NewDispatcher(notifyStore)
+	notifyDispatcher.Logger = logger
+	notifyDispatcher.Register(&notify.LogChannel{Logger: logger})
+	notifyDispatcher.Register(notify.NewWebhookChannel())
+	notifyDispatcher.Register(notify.NewSlackChannel())
+	notifyDispatcher.Register(&notify.EmailChannel{Sender: emailSender, DefaultFrom: authCfg.FromAddress})
+	bus.Subscribe(notifyDispatcher)
 	return server.Deps{
 			Store:       cat,
 			Pipelines:   pStore,
 			Quality:     qStore,
-			Notify:      postgres.NewNotifyStore(pool),
+			Notify:      notifyStore,
 			Policies:    postgres.NewPolicyStore(pool),
 			Audit:       auditStore,
 			AuditWriter: auditStore,
@@ -439,9 +453,10 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 // jobs (classify + reindex). They're only needed when the sync or worker
 // path executes those task types; the API process can omit them.
 type workerExtras struct {
-	Jobs       jobs.Repo
-	Classifier *classifier.Orchestrator
-	Indexer    *search.Indexer
+	Jobs              jobs.Repo
+	Classifier        *classifier.Orchestrator
+	Indexer           *search.Indexer
+	MigrationExecutor worker.MigrationExecutor
 }
 
 func buildWorkerHandlers(logger *slog.Logger, pStore pipeline.Repo, qStore quality.Store, pool *pgxpool.Pool, bus events.Bus, conns connection.Repo, vault secrets.Vault, logs pipeline.LogSink, extras workerExtras) *worker.Handlers {
@@ -473,16 +488,17 @@ func buildWorkerHandlers(logger *slog.Logger, pStore pipeline.Repo, qStore quali
 		Now:      time.Now,
 	}
 	return &worker.Handlers{
-		Logger:        logger,
-		Pipelines:     pStore,
-		Quality:       qStore,
-		Scheduler:     qScheduler,
-		Runner:        runner,
-		Resolver:      resolver,
-		Events:        bus,
-		Jobs:          extras.Jobs,
-		Classifier:    extras.Classifier,
-		SearchIndexer: extras.Indexer,
+		Logger:            logger,
+		Pipelines:         pStore,
+		Quality:           qStore,
+		Scheduler:         qScheduler,
+		Runner:            runner,
+		Resolver:          resolver,
+		Events:            bus,
+		Jobs:              extras.Jobs,
+		Classifier:        extras.Classifier,
+		SearchIndexer:     extras.Indexer,
+		MigrationExecutor: extras.MigrationExecutor,
 	}
 }
 

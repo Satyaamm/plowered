@@ -24,6 +24,7 @@ const (
 	TaskCrawlConnection    = "crawler:connection"
 	TaskClassifyConnection = "classify:connection"
 	TaskSearchReindex      = "search:reindex"
+	TaskMigrationRun       = "migration:run"
 )
 
 // PipelineRunPayload is the body of a TaskPipelineRun job.
@@ -70,6 +71,15 @@ type SearchReindexPayload struct {
 	JobID    string `json:"job_id"`
 }
 
+// MigrationRunPayload drives one execution of a migration plan. The run
+// row is created by the HTTP layer before enqueue so the UI sees an
+// in-flight row immediately; the worker just dispatches by RunID.
+type MigrationRunPayload struct {
+	TenantID string `json:"tenant_id"`
+	PlanID   string `json:"plan_id"`
+	RunID    string `json:"run_id"`
+}
+
 // Enqueuer is the surface the API layer needs to dispatch async work. The
 // concrete impl is either AsynqEnqueuer (Redis-backed, prod), SyncEnqueuer
 // (runs inline, useful for embedded mode + tests), or NoopEnqueuer (drops
@@ -81,6 +91,7 @@ type Enqueuer interface {
 	EnqueueCrawlConnection(ctx context.Context, payload CrawlConnectionPayload) error
 	EnqueueClassifyConnection(ctx context.Context, payload ClassifyConnectionPayload) error
 	EnqueueSearchReindex(ctx context.Context, payload SearchReindexPayload) error
+	EnqueueMigrationRun(ctx context.Context, payload MigrationRunPayload) error
 }
 
 // NoopEnqueuer drops every job. Useful when a test exercises the HTTP
@@ -96,6 +107,7 @@ func (NoopEnqueuer) EnqueueClassifyConnection(context.Context, ClassifyConnectio
 	return nil
 }
 func (NoopEnqueuer) EnqueueSearchReindex(context.Context, SearchReindexPayload) error { return nil }
+func (NoopEnqueuer) EnqueueMigrationRun(context.Context, MigrationRunPayload) error    { return nil }
 
 // marshal returns the JSON encoding of v. The error is folded back into the
 // caller — Asynq treats it as a non-retryable failure.

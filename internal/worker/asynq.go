@@ -111,6 +111,23 @@ func (e *AsynqEnqueuer) EnqueueSearchReindex(ctx context.Context, p SearchReinde
 	return err
 }
 
+func (e *AsynqEnqueuer) EnqueueMigrationRun(ctx context.Context, p MigrationRunPayload) error {
+	body, err := marshal(p)
+	if err != nil {
+		return fmt.Errorf("worker: marshal migration payload: %w", err)
+	}
+	// Migrations can move tens of millions of rows — generous timeout
+	// and zero retries (a half-finished run is worse than a failed-and-
+	// rerun run; the operator decides when to retry).
+	task := asynq.NewTask(TaskMigrationRun, body,
+		asynq.Queue(queueFor(p.TenantID)),
+		asynq.MaxRetry(0),
+		asynq.Timeout(2*time.Hour),
+	)
+	_, err = e.client.EnqueueContext(ctx, task)
+	return err
+}
+
 // queueFor returns the queue name for a tenant. We currently route all
 // jobs to "default" — Asynq workers consume only queues they know
 // about, so per-tenant queues require a discovery mechanism we'll add
@@ -145,6 +162,9 @@ func NewAsynqServer(cfg AsynqConfig, h *Handlers, logger *slog.Logger) *asynq.Se
 	})
 	mux.HandleFunc(TaskSearchReindex, func(ctx context.Context, t *asynq.Task) error {
 		return h.HandleSearchReindex(ctx, t.Payload())
+	})
+	mux.HandleFunc(TaskMigrationRun, func(ctx context.Context, t *asynq.Task) error {
+		return h.HandleMigrationRun(ctx, t.Payload())
 	})
 
 	go func() {

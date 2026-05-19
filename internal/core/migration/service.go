@@ -2,6 +2,8 @@ package migration
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Satyaamm/plowered/internal/core/connection"
+	"github.com/Satyaamm/plowered/internal/core/events"
 	"github.com/Satyaamm/plowered/internal/core/profile"
 	"github.com/Satyaamm/plowered/internal/core/warehouse"
 )
@@ -32,6 +35,7 @@ type Service struct {
 	Warehouse  *warehouse.MultiFactory
 	Conns      ConnectionReader
 	Checkpoint CheckpointStore // optional; required for ModeIncremental
+	Events     events.Bus      // optional; published lifecycle events drive notifications
 	Logger     *slog.Logger
 
 	// BatchSize controls how many rows we INSERT per dest round-trip.
@@ -86,15 +90,12 @@ func (s *Service) ListRuns(ctx context.Context, tenantID, planID string) ([]*Run
 
 // ---- Run (the actual data movement) ---------------------------------
 
-// RunPlan kicks off one execution of the plan. Returns the persisted
-// Run row with terminal status. The executor is synchronous; for
-// long-running plans the HTTP layer is expected to wrap this in a
-// jobs queue (designed; not wired this session).
-//
-// Failure semantics: the Run is recorded as Failed with the error
-// string, but the function returns the error to the caller too — so
-// the API can surface it inline AND the audit trail is complete.
-func (s *Service) RunPlan(ctx context.Context, tenantID, planID string) (*Run, error) {
+// EnqueueRun validates the plan, creates a `status=running` Run row,
+// and publishes a RunStarted event. The HTTP layer calls this on POST
+// .../run so the UI sees an in-flight row immediately, then hands the
+// run ID off to the async worker via the Enqueuer. The actual data
+// movement happens in ExecuteRun on the worker side.
+func (s *Service) EnqueueRun(ctx context.Context, tenantID, planID string) (*Run, error) {
 	if s.Store == nil || s.Warehouse == nil || s.Conns == nil {
 		return nil, errors.New("migration: service not fully configured")
 	}
@@ -102,18 +103,50 @@ func (s *Service) RunPlan(ctx context.Context, tenantID, planID string) (*Run, e
 	if err != nil {
 		return nil, fmt.Errorf("load plan: %w", err)
 	}
-	switch plan.Mode {
-	case ModeSnapshot:
-		// supported
-	case ModeIncremental:
-		if plan.CursorColumn == "" {
-			return nil, errors.New("migration: incremental mode requires cursor_column")
-		}
-		if s.Checkpoint == nil {
-			return nil, errors.New("migration: incremental mode requires a checkpoint store (configure object storage)")
-		}
-	default:
-		return nil, fmt.Errorf("%w: %s", ErrModeUnimplemented, plan.Mode)
+	if err := preflight(plan, s.Checkpoint); err != nil {
+		return nil, err
+	}
+	run, err := s.Store.StartRun(ctx, tenantID, planID)
+	if err != nil {
+		return nil, fmt.Errorf("start run: %w", err)
+	}
+	s.publish(ctx, events.Event{
+		ID:           newEventID(),
+		Type:         events.RunStarted,
+		Severity:     events.SeverityInfo,
+		TenantID:     tenantID,
+		ResourceType: "migration_run",
+		ResourceID:   run.ID,
+		Attributes: map[string]any{
+			"plan_id":   plan.ID,
+			"plan_name": plan.Name,
+			"mode":      string(plan.Mode),
+		},
+		OccurredAt: time.Now().UTC(),
+	})
+	return run, nil
+}
+
+// ExecuteRun is the worker-side body: load the persisted run + plan,
+// dispatch by mode, persist counters + terminal status, publish a
+// RunSucceeded or RunFailed event. Errors are returned to the queue
+// for telemetry but the run row is always finalised before we return.
+func (s *Service) ExecuteRun(ctx context.Context, tenantID, runID string) error {
+	if s.Store == nil || s.Warehouse == nil || s.Conns == nil {
+		return errors.New("migration: service not fully configured")
+	}
+	run, err := s.Store.GetRun(ctx, tenantID, runID)
+	if err != nil {
+		return fmt.Errorf("load run: %w", err)
+	}
+	plan, err := s.Store.GetPlan(ctx, tenantID, run.PlanID)
+	if err != nil {
+		return fmt.Errorf("load plan: %w", err)
+	}
+	if err := preflight(plan, s.Checkpoint); err != nil {
+		_ = s.Store.FinishRun(ctx, tenantID, runID, RunStatusFailed, 0, 0, err.Error())
+		s.publishMigrationFinished(ctx, plan, run, 0, 0, err)
+		return err
 	}
 
 	timeout := s.RunTimeout
@@ -122,11 +155,6 @@ func (s *Service) RunPlan(ctx context.Context, tenantID, planID string) (*Run, e
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-
-	run, err := s.Store.StartRun(ctx, tenantID, planID)
-	if err != nil {
-		return nil, fmt.Errorf("start run: %w", err)
-	}
 
 	var rowsRead, rowsWritten int64
 	var runErr error
@@ -146,16 +174,98 @@ func (s *Service) RunPlan(ctx context.Context, tenantID, planID string) (*Run, e
 	if finErr := s.Store.FinishRun(ctx, tenantID, run.ID, status, rowsRead, rowsWritten, errStr); finErr != nil {
 		s.logger().WarnContext(ctx, "migration: finish run", "err", finErr)
 	}
+	s.publishMigrationFinished(ctx, plan, run, rowsRead, rowsWritten, runErr)
+	return runErr
+}
 
-	run.Status = status
-	run.RowsRead = rowsRead
-	run.RowsWritten = rowsWritten
-	if runErr != nil {
-		run.Error = runErr.Error()
+// RunPlan is the sync convenience that combines EnqueueRun + ExecuteRun.
+// Used by tests and the in-memory dev path (where the worker is just
+// the same goroutine). Production wires the two halves separately
+// through the Asynq queue.
+func (s *Service) RunPlan(ctx context.Context, tenantID, planID string) (*Run, error) {
+	run, err := s.EnqueueRun(ctx, tenantID, planID)
+	if err != nil {
+		return nil, err
 	}
-	now := time.Now().UTC()
-	run.FinishedAt = &now
-	return run, runErr
+	execErr := s.ExecuteRun(ctx, tenantID, run.ID)
+	// Reload the terminal row so the caller sees final counters + status.
+	final, getErr := s.Store.GetRun(ctx, tenantID, run.ID)
+	if getErr != nil {
+		// Fall back to the in-flight row + error string so the HTTP
+		// caller still has something to render.
+		if execErr != nil {
+			run.Status = RunStatusFailed
+			run.Error = execErr.Error()
+		}
+		return run, execErr
+	}
+	return final, execErr
+}
+
+// preflight validates the plan is runnable in this mode + that the
+// dependencies the mode requires are configured.
+func preflight(plan *Plan, cp CheckpointStore) error {
+	switch plan.Mode {
+	case ModeSnapshot:
+		return nil
+	case ModeIncremental:
+		if plan.CursorColumn == "" {
+			return errors.New("migration: incremental mode requires cursor_column")
+		}
+		if cp == nil {
+			return errors.New("migration: incremental mode requires a checkpoint store (configure object storage)")
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: %s", ErrModeUnimplemented, plan.Mode)
+	}
+}
+
+func (s *Service) publish(ctx context.Context, e events.Event) {
+	if s.Events == nil {
+		return
+	}
+	s.Events.Publish(ctx, e)
+}
+
+func (s *Service) publishMigrationFinished(ctx context.Context, plan *Plan, run *Run, rowsRead, rowsWritten int64, runErr error) {
+	if s.Events == nil {
+		return
+	}
+	eventType := events.RunSucceeded
+	severity := events.SeverityInfo
+	if runErr != nil {
+		eventType = events.RunFailed
+		severity = events.SeverityError
+	}
+	attrs := map[string]any{
+		"plan_id":      plan.ID,
+		"plan_name":    plan.Name,
+		"mode":         string(plan.Mode),
+		"rows_read":    rowsRead,
+		"rows_written": rowsWritten,
+	}
+	if runErr != nil {
+		attrs["error"] = runErr.Error()
+	}
+	s.Events.Publish(ctx, events.Event{
+		ID:           newEventID(),
+		Type:         eventType,
+		Severity:     severity,
+		TenantID:     run.TenantID,
+		ResourceType: "migration_run",
+		ResourceID:   run.ID,
+		Attributes:   attrs,
+		OccurredAt:   time.Now().UTC(),
+	})
+}
+
+func newEventID() string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "evt-fallback"
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // runSnapshot is the snapshot-mode body. Reads all of source, writes

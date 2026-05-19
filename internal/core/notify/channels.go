@@ -21,7 +21,7 @@ type LogChannel struct {
 
 func (c *LogChannel) Kind() string { return "log" }
 
-func (c *LogChannel) Deliver(ctx context.Context, d Delivery) error {
+func (c *LogChannel) Deliver(ctx context.Context, _ *ChannelConfig, d Delivery) error {
 	logger := c.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -36,14 +36,13 @@ func (c *LogChannel) Deliver(ctx context.Context, d Delivery) error {
 	return nil
 }
 
-// WebhookChannel POSTs the rendered body to the configured URL. The HTTP
-// client honors a per-call timeout and counts non-2xx responses as failures
-// — the dispatcher's retry layer decides whether to try again.
+// WebhookChannel POSTs the rendered body to the URL stored in
+// ChannelConfig.Config["url"]. Optional Config["headers"] (a
+// map[string]any of header name → value) is applied per-request. The
+// HTTP client honors a per-call timeout and counts non-2xx responses as
+// failures — the dispatcher's retry layer decides whether to try again.
 type WebhookChannel struct {
 	HTTPClient *http.Client
-	// URLForChannel resolves a ChannelConfig to a destination URL. Callers
-	// inject this so the channel doesn't need to know about the Store.
-	URLForChannel func(channelID string) (string, map[string]string, error)
 }
 
 func NewWebhookChannel() *WebhookChannel {
@@ -64,13 +63,13 @@ type webhookPayload struct {
 	Timestamp      string `json:"timestamp"`
 }
 
-func (c *WebhookChannel) Deliver(ctx context.Context, d Delivery) error {
-	if c.URLForChannel == nil {
-		return fmt.Errorf("webhook: URLForChannel not configured")
+func (c *WebhookChannel) Deliver(ctx context.Context, cfg *ChannelConfig, d Delivery) error {
+	if cfg == nil {
+		return fmt.Errorf("webhook: nil channel config")
 	}
-	url, headers, err := c.URLForChannel(d.ChannelID)
-	if err != nil {
-		return fmt.Errorf("webhook: resolve url: %w", err)
+	url, _ := cfg.Config["url"].(string)
+	if url == "" {
+		return fmt.Errorf("webhook: channel %q missing config.url", cfg.ID)
 	}
 	body, _ := json.Marshal(webhookPayload{
 		DeliveryID:     d.ID,
@@ -86,8 +85,10 @@ func (c *WebhookChannel) Deliver(ctx context.Context, d Delivery) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", d.IdempotencyKey)
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	if hdrs, ok := cfg.Config["headers"].(map[string]any); ok {
+		for k, v := range hdrs {
+			req.Header.Set(k, fmt.Sprint(v))
+		}
 	}
 
 	resp, err := c.HTTPClient.Do(req)

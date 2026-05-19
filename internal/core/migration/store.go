@@ -26,6 +26,10 @@ type Store interface {
 	// StartRun inserts a new running-status row and returns it. Runs
 	// are never updated to a different plan_id once created.
 	StartRun(ctx context.Context, tenantID, planID string) (*Run, error)
+	// GetRun fetches a single run by ID. The worker calls this after
+	// dequeueing a TaskMigrationRun task to learn the plan_id without
+	// trusting the (possibly-stale) Asynq payload as the source of truth.
+	GetRun(ctx context.Context, tenantID, runID string) (*Run, error)
 	// FinishRun records the terminal state (Succeeded or Failed) plus
 	// counters. The store is responsible for setting FinishedAt.
 	FinishRun(ctx context.Context, tenantID, runID string, status RunStatus, rowsRead, rowsWritten int64, errStr string) error

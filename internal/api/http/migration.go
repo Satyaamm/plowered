@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/Satyaamm/plowered/internal/core/migration"
+	"github.com/Satyaamm/plowered/internal/worker"
 )
 
 // Migrator is the small surface the HTTP layer needs. Decoupled from
@@ -17,11 +17,14 @@ type Migrator interface {
 	GetPlan(ctx context.Context, tenantID, planID string) (*migration.Plan, error)
 	ListPlans(ctx context.Context, tenantID string) ([]*migration.Plan, error)
 	DeletePlan(ctx context.Context, tenantID, planID string) error
-	RunPlan(ctx context.Context, tenantID, planID string) (*migration.Run, error)
+	// EnqueueRun creates the running-status Run row and returns it. The
+	// HTTP layer pairs this with a worker.Enqueuer call to dispatch the
+	// actual work asynchronously.
+	EnqueueRun(ctx context.Context, tenantID, planID string) (*migration.Run, error)
 	ListRuns(ctx context.Context, tenantID, planID string) ([]*migration.Run, error)
 }
 
-func migrationHandlers(mux *http.ServeMux, m Migrator) {
+func migrationHandlers(mux *http.ServeMux, m Migrator, enq worker.Enqueuer) {
 	if m == nil {
 		return
 	}
@@ -29,7 +32,7 @@ func migrationHandlers(mux *http.ServeMux, m Migrator) {
 	mux.HandleFunc("POST   /v1/migrations",              createPlanHandler(m))
 	mux.HandleFunc("GET    /v1/migrations/{id}",         getPlanHandler(m))
 	mux.HandleFunc("DELETE /v1/migrations/{id}",         deletePlanHandler(m))
-	mux.HandleFunc("POST   /v1/migrations/{id}/run",     runPlanHandler(m))
+	mux.HandleFunc("POST   /v1/migrations/{id}/run",     runPlanHandler(m, enq))
 	mux.HandleFunc("GET    /v1/migrations/{id}/runs",    listMigRunsHandler(m))
 }
 
@@ -128,29 +131,36 @@ func deletePlanHandler(m Migrator) http.HandlerFunc {
 	}
 }
 
-// runPlanHandler is synchronous for v0 — the executor caps at 30
-// minutes and we'd rather wait than fire-and-forget. Async via a jobs
-// queue is a follow-up.
-func runPlanHandler(m Migrator) http.HandlerFunc {
+// runPlanHandler creates a running-status Run row and hands the work
+// off to the worker. Returns 202 with the in-flight Run so the UI can
+// start polling /runs immediately. If no enqueuer is wired (the noop
+// fallback) the row is still created — useful for tests, less useful in
+// production, so main.go is expected to wire a real enqueuer.
+func runPlanHandler(m Migrator, enq worker.Enqueuer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenant := mustTenant(w, r)
 		if tenant == "" {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 35*time.Minute)
-		defer cancel()
-		run, err := m.RunPlan(ctx, tenant, r.PathValue("id"))
+		planID := r.PathValue("id")
+		run, err := m.EnqueueRun(r.Context(), tenant, planID)
 		if err != nil {
-			// Even on failure we want to ship the Run row so the UI
-			// can render status=failed + the error string.
-			if run != nil {
-				writeJSON(w, http.StatusOK, run)
-				return
-			}
 			writeMigError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, run)
+		if enq != nil {
+			if err := enq.EnqueueMigrationRun(r.Context(), worker.MigrationRunPayload{
+				TenantID: tenant,
+				PlanID:   planID,
+				RunID:    run.ID,
+			}); err != nil {
+				// The row exists; surface the dispatch failure so the
+				// caller knows the worker won't pick it up.
+				writeJSON(w, http.StatusInternalServerError, errorBody{"enqueue_failed", err.Error()})
+				return
+			}
+		}
+		writeJSON(w, http.StatusAccepted, run)
 	}
 }
 

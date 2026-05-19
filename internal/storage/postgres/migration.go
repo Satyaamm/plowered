@@ -120,6 +120,32 @@ func (s *MigrationStore) StartRun(ctx context.Context, tenantID, planID string) 
 	return r, nil
 }
 
+func (s *MigrationStore) GetRun(ctx context.Context, tenantID, runID string) (*mig.Run, error) {
+	const q = `
+		SELECT id::text, tenant_id::text, plan_id::text, status,
+		       started_at, finished_at, rows_read, rows_written,
+		       COALESCE(checkpoint_uri,''), COALESCE(error,'')
+		  FROM migration_runs
+		 WHERE tenant_id = $1::uuid AND id = $2::uuid`
+	r := &mig.Run{}
+	var statusStr string
+	var finishedAt *time.Time
+	err := s.pool.QueryRow(ctx, q, tenantID, runID).Scan(
+		&r.ID, &r.TenantID, &r.PlanID, &statusStr,
+		&r.StartedAt, &finishedAt, &r.RowsRead, &r.RowsWritten,
+		&r.CheckpointURI, &r.Error,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, mig.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get run: %w", err)
+	}
+	r.Status = mig.RunStatus(statusStr)
+	r.FinishedAt = finishedAt
+	return r, nil
+}
+
 func (s *MigrationStore) FinishRun(
 	ctx context.Context,
 	tenantID, runID string,

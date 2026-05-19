@@ -38,6 +38,9 @@ func (*recorder) EnqueueClassifyConnection(context.Context, worker.ClassifyConne
 func (*recorder) EnqueueSearchReindex(context.Context, worker.SearchReindexPayload) error {
 	return nil
 }
+func (*recorder) EnqueueMigrationRun(context.Context, worker.MigrationRunPayload) error {
+	return nil
+}
 
 // fixedClock returns a configurable time. Tests advance it manually.
 type fixedClock struct {

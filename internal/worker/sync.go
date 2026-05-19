@@ -101,3 +101,17 @@ func (s *SyncEnqueuer) EnqueueSearchReindex(ctx context.Context, p SearchReindex
 	}(ctx)
 	return nil
 }
+
+func (s *SyncEnqueuer) EnqueueMigrationRun(ctx context.Context, p MigrationRunPayload) error {
+	body, err := marshal(p)
+	if err != nil {
+		return fmt.Errorf("worker: marshal migration payload: %w", err)
+	}
+	go func(parent context.Context) {
+		ctx := context.WithoutCancel(parent)
+		if err := s.Handlers.HandleMigrationRun(ctx, body); err != nil {
+			s.logger().ErrorContext(ctx, "sync migration run failed", "err", err)
+		}
+	}(ctx)
+	return nil
+}

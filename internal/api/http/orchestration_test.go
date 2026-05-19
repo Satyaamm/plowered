@@ -294,6 +294,9 @@ func (*countingEnqueuer) EnqueueClassifyConnection(context.Context, worker.Class
 func (*countingEnqueuer) EnqueueSearchReindex(context.Context, worker.SearchReindexPayload) error {
 	return nil
 }
+func (*countingEnqueuer) EnqueueMigrationRun(context.Context, worker.MigrationRunPayload) error {
+	return nil
+}
 
 func TestTriggerEnqueuesPipelineJob(t *testing.T) {
 	cnt := &countingEnqueuer{}
