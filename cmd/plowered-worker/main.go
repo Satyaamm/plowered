@@ -23,7 +23,10 @@ import (
 	// dial customer warehouses on crawl jobs. Side-effect import.
 	_ "github.com/snowflakedb/gosnowflake"
 
+	"github.com/Satyaamm/plowered/internal/adapters/athena_source"
 	"github.com/Satyaamm/plowered/internal/adapters/bigquery_source"
+	"github.com/Satyaamm/plowered/internal/adapters/dynamodb_source"
+	"github.com/Satyaamm/plowered/internal/adapters/mongodb_source"
 	"github.com/Satyaamm/plowered/internal/adapters/postgres_source"
 	"github.com/Satyaamm/plowered/internal/adapters/snowflake_source"
 	"github.com/Satyaamm/plowered/internal/config"
@@ -103,6 +106,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	sources.Register(connection.TypePostgres, postgres_source.NewCrawler())
 	sources.Register(connection.TypeSnowflake, snowflake_source.NewCrawler())
 	sources.Register(connection.TypeBigQuery, bigquery_source.NewCrawler())
+	sources.Register(connection.TypeMongoDB, mongodb_source.NewCrawler())
+	sources.Register(connection.TypeDynamoDB, dynamodb_source.NewCrawler())
+	sources.Register(connection.TypeAthena, athena_source.NewCrawler())
 
 	registry := pipeline.NewRegistry()
 	tasks.RegisterAll(registry, tasks.Deps{

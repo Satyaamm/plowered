@@ -24,7 +24,10 @@ import (
 
 	apihttp "github.com/Satyaamm/plowered/internal/api/http"
 	"github.com/Satyaamm/plowered/internal/api/middleware"
+	"github.com/Satyaamm/plowered/internal/adapters/athena_source"
 	"github.com/Satyaamm/plowered/internal/adapters/bigquery_source"
+	"github.com/Satyaamm/plowered/internal/adapters/dynamodb_source"
+	"github.com/Satyaamm/plowered/internal/adapters/mongodb_source"
 	"github.com/Satyaamm/plowered/internal/adapters/postgres_source"
 	"github.com/Satyaamm/plowered/internal/adapters/snowflake_source"
 	"github.com/Satyaamm/plowered/internal/config"
@@ -277,6 +280,9 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 	registry.Register(connection.TypePostgres, postgres_source.New())
 	registry.Register(connection.TypeSnowflake, snowflake_source.New())
 	registry.Register(connection.TypeBigQuery, bigquery_source.New())
+	registry.Register(connection.TypeMongoDB, mongodb_source.New())
+	registry.Register(connection.TypeDynamoDB, dynamodb_source.New())
+	registry.Register(connection.TypeAthena, athena_source.New())
 
 	logStore := postgres.NewLogStore(pool)
 	jobsStore := postgres.NewJobsStore(pool)
@@ -696,13 +702,26 @@ func newWarehouseFactory(conns connection.Repo, vault secrets.Vault) *warehouse.
 		return warehouse.NewSQLExecutor(db), nil
 	})
 
-	// Cloud warehouses whose drivers aren't compiled in this build.
+	// Athena uses the AWS SDK + StartQueryExecution; the executor
+	// drives the poll loop and paginates GetQueryResults.
+	mf.Register(string(connection.TypeAthena), func(ctx context.Context, tenantID, connID string) (warehouse.Executor, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, err
+		}
+		secret, err := loadSecret(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		return athena_source.NewExecutor(ctx, c.Config, secret)
+	})
+
+	// Cloud warehouses whose SQL drivers aren't compiled in this build.
 	// They register as stubs so the dispatcher returns
 	// ErrDriverNotInstalled instead of "unsupported type" — clearer
 	// signal to the operator about what's needed.
 	for _, t := range []connection.Type{
 		connection.TypeBigQuery,
-		connection.TypeAthena,
 		connection.TypeMySQL, // MySQL driver not compiled this session
 	} {
 		typ := t
