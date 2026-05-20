@@ -53,6 +53,40 @@ scheduler:
   reaperInterval: 1m
   stuckAfter: 5m
 
+# ─── Notify dispatcher ────────────────────────────────────────────────────
+# The dispatcher fans deliveries onto a bounded worker pool so a slow Slack
+# webhook can't back-pressure the event bus publisher. queueSize caps the
+# in-flight buffer; on overflow OnEvent falls back to inline delivery with
+# a warning log so events never silently drop.
+notify:
+  workers: 4
+  queueSize: 512
+
+# ─── Contract evaluator ───────────────────────────────────────────────────
+# How often the periodic runner walks every tenant's active contracts and
+# evaluates them against the latest profile cache. 5m is the default.
+contracts:
+  evaluationInterval: 5m
+
+# ─── Cost watcher ─────────────────────────────────────────────────────────
+# How often the watcher checks each tenant's rolling 30-day spend against
+# their monthly budget and fires CheckFailed events. 15m is the default.
+cost:
+  watcherInterval: 15m
+
+# ─── Object storage ───────────────────────────────────────────────────────
+# When bucket is non-empty the API + worker write profile snapshots, AI
+# prompt logs, and migration checkpoints to S3. Empty bucket falls back
+# to in-memory (single-process dev only — NOT durable).
+#   region    — AWS region; default us-east-1 when bucket is set
+#   endpoint  — for MinIO / R2; leave empty for real AWS
+#   pathStyle — true for MinIO (path-style addressing)
+objectStore:
+  bucket: ""
+  region: "us-east-1"
+  endpoint: ""
+  pathStyle: false
+
 # ─── Listeners ────────────────────────────────────────────────────────────
 service:
   type: ClusterIP

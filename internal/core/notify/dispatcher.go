@@ -17,13 +17,34 @@ import (
 // Dispatcher subscribes to an events.Bus and turns matching events into
 // Delivery rows on the configured channels. It owns the channel registry,
 // the Store, and the retry policy.
+//
+// Delivery is fanned out to a bounded worker pool so a slow channel
+// (Slack rate-limit, email provider hang) cannot back-pressure the
+// events bus publisher. Set Workers and QueueSize before Start();
+// defaults are 4 workers / 512 buffered jobs.
 type Dispatcher struct {
 	Store    Store
 	Logger   *slog.Logger
 	Now      func() time.Time
 
+	// Workers is the number of goroutines that consume delivery jobs.
+	// 0 = synchronous fallback (legacy behaviour, used by tests).
+	Workers int
+	// QueueSize caps the in-flight buffer. When full, OnEvent records
+	// a dropped-delivery log line rather than blocking the publisher.
+	QueueSize int
+
 	mu       sync.RWMutex
 	channels map[string]Channel // kind → impl
+
+	jobs      chan dispatchJob
+	startOnce sync.Once
+	stopped   chan struct{}
+}
+
+type dispatchJob struct {
+	rule  Rule
+	event events.Event
 }
 
 func NewDispatcher(store Store) *Dispatcher {
@@ -35,6 +56,46 @@ func NewDispatcher(store Store) *Dispatcher {
 	}
 }
 
+// Start spins up the worker pool. Calling it more than once is a no-op.
+// When ctx is cancelled the workers drain and exit; the dispatcher
+// falls back to synchronous delivery for any subsequent OnEvent.
+func (d *Dispatcher) Start(ctx context.Context) {
+	d.startOnce.Do(func() {
+		if d.Workers <= 0 {
+			d.Workers = 4
+		}
+		if d.QueueSize <= 0 {
+			d.QueueSize = 512
+		}
+		d.jobs = make(chan dispatchJob, d.QueueSize)
+		d.stopped = make(chan struct{})
+		var wg sync.WaitGroup
+		for i := 0; i < d.Workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case job, ok := <-d.jobs:
+						if !ok {
+							return
+						}
+						d.deliverOne(ctx, job.rule, job.event)
+					}
+				}
+			}()
+		}
+		go func() {
+			<-ctx.Done()
+			close(d.jobs)
+			wg.Wait()
+			close(d.stopped)
+		}()
+	})
+}
+
 // Register adds a Channel impl by Kind. Subsequent registrations for the
 // same kind replace the previous one.
 func (d *Dispatcher) Register(c Channel) {
@@ -43,9 +104,11 @@ func (d *Dispatcher) Register(c Channel) {
 	d.mu.Unlock()
 }
 
-// OnEvent satisfies events.Subscriber. Looks up matching rules and enqueues
-// a Delivery for each. Deliveries dispatch synchronously in v0; a follow-up
-// moves them onto a worker pool.
+// OnEvent satisfies events.Subscriber. Looks up matching rules and
+// hands each off to the worker pool (when Start() has been called) or
+// dispatches inline (legacy / test path). A full pool falls back to
+// inline so we never lose an event, with a warning so the operator
+// notices.
 func (d *Dispatcher) OnEvent(ctx context.Context, e events.Event) {
 	if d.Store == nil {
 		return
@@ -59,7 +122,17 @@ func (d *Dispatcher) OnEvent(ctx context.Context, e events.Event) {
 		if !ruleMatches(r, e) {
 			continue
 		}
-		d.deliverOne(ctx, r, e)
+		if d.jobs == nil {
+			d.deliverOne(ctx, r, e)
+			continue
+		}
+		select {
+		case d.jobs <- dispatchJob{rule: r, event: e}:
+		default:
+			d.logger().Warn("notify: worker pool full — delivering inline",
+				"rule", r.ID, "event", e.Type)
+			d.deliverOne(ctx, r, e)
+		}
 	}
 }
 

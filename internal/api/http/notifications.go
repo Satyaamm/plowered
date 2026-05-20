@@ -65,7 +65,28 @@ func listNotifyRulesHandler(s notify.Repo) http.HandlerFunc {
 		if tenant == "" {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"rules": s.ListRules(tenant)})
+		rules := s.ListRules(tenant)
+		lastBy := s.LastDeliveryPerRule(tenant)
+		// Enrich each rule with last_delivered_at so the UI can render
+		// "last fired" inline without a second round-trip per row.
+		out := make([]map[string]any, 0, len(rules))
+		for _, rule := range rules {
+			item := map[string]any{
+				"id":           rule.ID,
+				"tenant_id":    rule.TenantID,
+				"name":         rule.Name,
+				"channel_id":   rule.ChannelID,
+				"event_types":  rule.EventTypes,
+				"min_severity": rule.MinSeverity,
+				"enabled":      rule.Enabled,
+				"created_at":   rule.CreatedAt,
+			}
+			if t, ok := lastBy[rule.ID]; ok {
+				item["last_delivered_at"] = t
+			}
+			out = append(out, item)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"rules": out})
 	}
 }
 

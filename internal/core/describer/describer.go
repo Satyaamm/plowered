@@ -15,7 +15,9 @@
 package describer
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/aictx"
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/blob"
 	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/pkg/llm"
 )
@@ -64,7 +67,13 @@ type Service struct {
 	// Cost is the unified cost-tracking recorder. Optional — when nil,
 	// suggestions still ship but no cost row is written. Wired via
 	// cmd/plowered/main.go alongside the Postgres cost store.
-	Cost   cost.Recorder
+	Cost cost.Recorder
+	// Mirror is an optional ObjectStore. When set, every successful
+	// suggestion writes the full prompt + response payload to
+	// `tenants/{tenant}/ai/describer/{asset_id}/{timestamp}.json` so
+	// audits can reconstruct exactly what the model saw. Errors are
+	// logged but never propagated; the PG row is the source of truth.
+	Mirror blob.ObjectStore
 	Logger *slog.Logger
 
 	// MaxOutputTokens caps generation length. Defaults to 300 which
@@ -125,7 +134,36 @@ func (s *Service) Suggest(ctx context.Context, tenantID, assetID, generatedBy st
 		"feature":  "describer",
 		"asset_id": assetID,
 	})
+	s.mirror(ctx, tenantID, assetID, prompt, out)
 	return out, nil
+}
+
+// mirror writes the full prompt + response payload to object storage
+// when configured. Quiet on failure — the PG audit row already shipped.
+func (s *Service) mirror(ctx context.Context, tenantID, assetID, prompt string, sug *Suggestion) {
+	if s.Mirror == nil {
+		return
+	}
+	body, err := json.Marshal(map[string]any{
+		"feature":     "describer",
+		"tenant_id":   tenantID,
+		"asset_id":    assetID,
+		"prompt":      prompt,
+		"suggestion":  sug.Suggestion,
+		"model":       sug.Model,
+		"input_tokens": sug.InputTokens,
+		"output_tokens": sug.OutputTokens,
+		"generated_at": sug.GeneratedAt.UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		s.logger().WarnContext(ctx, "describer: mirror encode", "err", err)
+		return
+	}
+	stamp := sug.GeneratedAt.UTC().Format("20060102T150405.000Z")
+	key := fmt.Sprintf("tenants/%s/ai/describer/%s/%s.json", tenantID, assetID, stamp)
+	if _, err := s.Mirror.Put(ctx, key, bytes.NewReader(body)); err != nil {
+		s.logger().WarnContext(ctx, "describer: mirror put", "err", err, "key", key)
+	}
 }
 
 // systemPrompt is the constant instruction every suggestion uses.

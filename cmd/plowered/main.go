@@ -25,6 +25,9 @@ import (
 	apihttp "github.com/Satyaamm/plowered/internal/api/http"
 	"github.com/Satyaamm/plowered/internal/api/middleware"
 	"github.com/Satyaamm/plowered/internal/adapters/athena_source"
+	// bigquery_driver init() registers itself with bigquery_source as the
+	// active driver; it also exposes NewExecutor for the warehouse factory.
+	"github.com/Satyaamm/plowered/internal/adapters/bigquery_driver"
 	"github.com/Satyaamm/plowered/internal/adapters/bigquery_source"
 	"github.com/Satyaamm/plowered/internal/adapters/dynamodb_source"
 	"github.com/Satyaamm/plowered/internal/adapters/mongodb_source"
@@ -54,6 +57,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/blob"
 	"github.com/Satyaamm/plowered/internal/core/certification"
 	"github.com/Satyaamm/plowered/internal/core/contract"
+	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/internal/core/describer"
 	"github.com/Satyaamm/plowered/internal/core/migration"
 	"github.com/Satyaamm/plowered/internal/core/policy"
@@ -114,7 +118,65 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	startScheduler(ctx, logger, deps)
 	startOutboxRelay(ctx, logger, deps)
+	startContractRunner(ctx, logger, deps)
+	startCostWatcher(ctx, logger, deps)
 	return server.Run(ctx, cfg, deps)
+}
+
+// startCostWatcher periodically checks each tenant's rolling cost
+// against their monthly budget and fires CheckFailed events when the
+// warn/hard thresholds are crossed. Disabled when no budgets are
+// configured (no rows in cost_budgets).
+func startCostWatcher(ctx context.Context, logger *slog.Logger, deps server.Deps) {
+	if deps.CostBudgets == nil || deps.CostTenants == nil || deps.Events == nil {
+		return
+	}
+	if os.Getenv("PLOWERED_COST_WATCHER_DISABLED") == "1" {
+		logger.Info("cost watcher: disabled via PLOWERED_COST_WATCHER_DISABLED=1")
+		return
+	}
+	interval := 15 * time.Minute
+	if v := os.Getenv("PLOWERED_COST_WATCHER_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			interval = d
+		}
+	}
+	w := &cost.Watcher{
+		Budgets:  deps.CostBudgets,
+		Tenants:  deps.CostTenants,
+		Events:   deps.Events,
+		Interval: interval,
+		Logger:   logger,
+	}
+	w.Start(ctx)
+	logger.Info("cost watcher: armed", "interval", interval)
+}
+
+// startContractRunner spins up the periodic contract evaluator. Reads
+// the interval from PLOWERED_CONTRACT_INTERVAL (default 5m). Disabled
+// when no Contract service is wired (memory mode).
+func startContractRunner(ctx context.Context, logger *slog.Logger, deps server.Deps) {
+	if deps.Contract == nil || deps.ContractTenants == nil {
+		return
+	}
+	if os.Getenv("PLOWERED_CONTRACT_RUNNER_DISABLED") == "1" {
+		logger.Info("contract runner: disabled via PLOWERED_CONTRACT_RUNNER_DISABLED=1")
+		return
+	}
+	interval := 5 * time.Minute
+	if v := os.Getenv("PLOWERED_CONTRACT_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			interval = d
+		}
+	}
+	runner := &contract.Runner{
+		Service:  deps.Contract,
+		Tenants:  deps.ContractTenants,
+		Interval: interval,
+		Logger:   logger,
+	}
+	runner.Start(ctx)
+	logger.Info("contract runner: armed", "interval", interval)
 }
 
 // startOutboxRelay spins up the relay loop that reads unprocessed rows
@@ -301,10 +363,12 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 	// MySQL / Redshift without further per-driver code here.
 	profileStore := postgres.NewProfileStore(pool)
 	warehouseFactory := newWarehouseFactory(connectionStore, vault)
+	objectStore := buildObjectStore(ctx, logger)
 	profilerSvc := &profile.Service{
 		Reader:    profileStore,
 		Cache:     profileStore,
 		Warehouse: warehouseFactory,
+		Mirror:    objectStore,
 		Logger:    logger,
 	}
 	// Describer: AI-driven description suggestions. Holds the resolver
@@ -320,11 +384,13 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 		Profiles: profileStore,
 	}
 	costStore := postgres.NewCostStore(pool)
+	contractStore := postgres.NewContractStore(pool)
 	describerSvc := &describer.Service{
 		Context:  contextBuilder,
 		Resolver: aiResolver,
 		Log:      aiDescStore,
 		Cost:     costStore,
+		Mirror:   objectStore,
 		Logger:   logger,
 	}
 	embeddingStore := postgres.NewEmbeddingStore(pool)
@@ -345,6 +411,7 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 		Warehouse: warehouseFactory,
 		Log:       postgres.NewAIQueryStore(pool),
 		Cost:      costStore,
+		Mirror:    objectStore,
 		Logger:    logger,
 	}
 	// Migration: SQL → SQL data movement. Reuses the warehouse factory
@@ -355,7 +422,6 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 	// durable artifact storage (migration checkpoints today, profile
 	// snapshots + AI logs in follow-ups). Otherwise an in-memory
 	// store keeps single-process dev working without AWS creds.
-	objectStore := buildObjectStore(ctx, logger)
 	migrationSvc := &migration.Service{
 		Store:      postgres.NewMigrationStore(pool),
 		Warehouse:  warehouseFactory,
@@ -399,10 +465,13 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 	// session — now check/migration lifecycle events route through here.
 	notifyDispatcher := notify.NewDispatcher(notifyStore)
 	notifyDispatcher.Logger = logger
+	notifyDispatcher.Workers = envIntDefault("PLOWERED_NOTIFY_WORKERS", 4)
+	notifyDispatcher.QueueSize = envIntDefault("PLOWERED_NOTIFY_QUEUE_SIZE", 512)
 	notifyDispatcher.Register(&notify.LogChannel{Logger: logger})
 	notifyDispatcher.Register(notify.NewWebhookChannel())
 	notifyDispatcher.Register(notify.NewSlackChannel())
 	notifyDispatcher.Register(&notify.EmailChannel{Sender: emailSender, DefaultFrom: authCfg.FromAddress})
+	notifyDispatcher.Start(ctx)
 	bus.Subscribe(notifyDispatcher)
 	return server.Deps{
 			Store:       cat,
@@ -446,13 +515,18 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 			Certification: &certification.Service{
 				Store: postgres.NewCertificationStore(pool),
 			},
-			Cost: costStore,
-			Contract: &contract.Service{
-				Store:   postgres.NewContractStore(pool),
-				Profile: profileStore,
-				Events:  bus,
-				Logger:  logger,
-			},
+			Cost:        costStore,
+			CostBudgets: costStore,
+			CostTenants: costStore,
+			Contract: func() *contract.Service {
+				return &contract.Service{
+					Store:   contractStore,
+					Profile: profileStore,
+					Events:  bus,
+					Logger:  logger,
+				}
+			}(),
+			ContractTenants: contractStore,
 		}, func() {
 			if enqClose != nil {
 				_ = enqClose()
@@ -723,12 +797,25 @@ func newWarehouseFactory(conns connection.Repo, vault secrets.Vault) *warehouse.
 		return athena_source.NewExecutor(ctx, c.Config, secret)
 	})
 
-	// Cloud warehouses whose SQL drivers aren't compiled in this build.
-	// They register as stubs so the dispatcher returns
-	// ErrDriverNotInstalled instead of "unsupported type" — clearer
-	// signal to the operator about what's needed.
+	// BigQuery uses the GCP Go client (cloud.google.com/go/bigquery).
+	// The driver package's init() registers itself with bigquery_source
+	// so Tester/Crawler also work; here we plug the warehouse path.
+	mf.Register(string(connection.TypeBigQuery), func(ctx context.Context, tenantID, connID string) (warehouse.Executor, error) {
+		c, err := conns.Get(ctx, tenantID, connID)
+		if err != nil {
+			return nil, err
+		}
+		secret, err := loadSecret(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		return bigquery_driver.NewExecutor(ctx, c.Config, secret)
+	})
+
+	// SQL drivers not compiled this build register as stubs so the
+	// dispatcher returns ErrDriverNotInstalled rather than a confusing
+	// "unsupported type" — clearer signal to the operator.
 	for _, t := range []connection.Type{
-		connection.TypeBigQuery,
 		connection.TypeMySQL, // MySQL driver not compiled this session
 	} {
 		typ := t

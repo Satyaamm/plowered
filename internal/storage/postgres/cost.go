@@ -107,6 +107,109 @@ func (s *CostStore) Daily(ctx context.Context, tenantID string, from, to time.Ti
 	return out, rows.Err()
 }
 
+// GetBudget returns the per-tenant budget row; missing rows return a
+// zero-value Budget with all fields blank (callers check MonthlyUSD).
+func (s *CostStore) GetBudget(ctx context.Context, tenantID string) (*cost.Budget, error) {
+	const q = `
+		SELECT tenant_id::text, monthly_usd, warn_at_pct, hard_at_pct,
+		       last_warned_at, last_hard_at, updated_at
+		  FROM cost_budgets WHERE tenant_id = $1::uuid`
+	b := &cost.Budget{TenantID: tenantID, WarnAtPct: 80, HardAtPct: 100}
+	var monthly *float64
+	var lastWarn, lastHard *time.Time
+	err := s.pool.QueryRow(ctx, q, tenantID).Scan(
+		&b.TenantID, &monthly, &b.WarnAtPct, &b.HardAtPct, &lastWarn, &lastHard, &b.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return b, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get budget: %w", err)
+	}
+	b.MonthlyUSD = monthly
+	b.LastWarnedAt = lastWarn
+	b.LastHardAt = lastHard
+	return b, nil
+}
+
+func (s *CostStore) UpsertBudget(ctx context.Context, b *cost.Budget) (*cost.Budget, error) {
+	if b == nil || b.TenantID == "" {
+		return nil, errors.New("cost: nil/empty budget")
+	}
+	if b.WarnAtPct == 0 {
+		b.WarnAtPct = 80
+	}
+	if b.HardAtPct == 0 {
+		b.HardAtPct = 100
+	}
+	const q = `
+		INSERT INTO cost_budgets (tenant_id, monthly_usd, warn_at_pct, hard_at_pct, updated_at)
+		VALUES ($1::uuid, $2, $3, $4, now())
+		ON CONFLICT (tenant_id) DO UPDATE
+		   SET monthly_usd = EXCLUDED.monthly_usd,
+		       warn_at_pct = EXCLUDED.warn_at_pct,
+		       hard_at_pct = EXCLUDED.hard_at_pct,
+		       updated_at  = now()
+		RETURNING updated_at`
+	if err := s.pool.QueryRow(ctx, q, b.TenantID, b.MonthlyUSD, b.WarnAtPct, b.HardAtPct).Scan(&b.UpdatedAt); err != nil {
+		return nil, fmt.Errorf("upsert budget: %w", err)
+	}
+	return b, nil
+}
+
+func (s *CostStore) MarkWarned(ctx context.Context, tenantID string, at time.Time) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE cost_budgets SET last_warned_at = $2 WHERE tenant_id = $1::uuid`,
+		tenantID, at,
+	)
+	return err
+}
+
+func (s *CostStore) MarkHard(ctx context.Context, tenantID string, at time.Time) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE cost_budgets SET last_hard_at = $2 WHERE tenant_id = $1::uuid`,
+		tenantID, at,
+	)
+	return err
+}
+
+// TenantsWithCost yields every distinct tenant that has at least one
+// row in cost_records. Used by the Watcher to scope its budget check
+// (a tenant with no spend can't be over budget).
+func (s *CostStore) TenantsWithCost(ctx context.Context) ([]string, error) {
+	const q = `SELECT DISTINCT tenant_id::text FROM cost_records`
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("list tenants with cost: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *CostStore) RollingTotal(ctx context.Context, tenantID string, days int) (float64, error) {
+	if days <= 0 {
+		days = 30
+	}
+	const q = `
+		SELECT COALESCE(SUM(cost_usd), 0)::float8
+		  FROM cost_records
+		 WHERE tenant_id = $1::uuid
+		   AND ts >= now() - ($2::int * INTERVAL '1 day')`
+	var total float64
+	if err := s.pool.QueryRow(ctx, q, tenantID, days).Scan(&total); err != nil {
+		return 0, fmt.Errorf("rolling total: %w", err)
+	}
+	return total, nil
+}
+
 func scanCostRecord(row pgx.Row) (*cost.Record, error) {
 	r := &cost.Record{}
 	var kind string

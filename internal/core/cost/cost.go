@@ -66,6 +66,29 @@ type Reader interface {
 type Store interface {
 	Recorder
 	Reader
+	BudgetStore
+}
+
+// Budget is the per-tenant monthly cap. Nil MonthlyUSD = disabled.
+type Budget struct {
+	TenantID     string     `json:"tenant_id"`
+	MonthlyUSD   *float64   `json:"monthly_usd,omitempty"`
+	WarnAtPct    int        `json:"warn_at_pct"`
+	HardAtPct    int        `json:"hard_at_pct"`
+	LastWarnedAt *time.Time `json:"last_warned_at,omitempty"`
+	LastHardAt   *time.Time `json:"last_hard_at,omitempty"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// BudgetStore is the per-tenant budget surface.
+type BudgetStore interface {
+	GetBudget(ctx context.Context, tenantID string) (*Budget, error)
+	UpsertBudget(ctx context.Context, b *Budget) (*Budget, error)
+	MarkWarned(ctx context.Context, tenantID string, at time.Time) error
+	MarkHard(ctx context.Context, tenantID string, at time.Time) error
+	// RollingTotal returns the sum of cost_usd over the last 30 days
+	// (or other window if Days is non-zero). Used by the Watcher.
+	RollingTotal(ctx context.Context, tenantID string, days int) (float64, error)
 }
 
 // NoopRecorder drops every record. Use when cost-tracking is disabled

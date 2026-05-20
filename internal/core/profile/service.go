@@ -1,13 +1,16 @@
 package profile
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"time"
 
+	"github.com/Satyaamm/plowered/internal/core/blob"
 	"github.com/Satyaamm/plowered/internal/core/connection"
 	"github.com/Satyaamm/plowered/internal/core/warehouse"
 )
@@ -64,6 +67,13 @@ type Service struct {
 	Reader    AssetReader
 	Cache     Cache
 	Warehouse *warehouse.MultiFactory
+	// Mirror is an optional ObjectStore. When set, every successful
+	// profile run also writes the report JSON to
+	// `tenants/{tenant}/profile/{asset_id}/{generated_at}.json` so
+	// the full history survives independent of Postgres TTLs / cleanup.
+	// Errors during mirror writes are logged but never propagated —
+	// the in-DB cache is the source of truth.
+	Mirror    blob.ObjectStore
 	Logger    *slog.Logger
 
 	// FreshFor: a report newer than this is served as-is. Default 24h.
@@ -105,6 +115,7 @@ func (s *Service) Get(ctx context.Context, tenantID, tableAssetID string) (*Repo
 	if err := s.Cache.Put(ctx, report); err != nil {
 		logger.WarnContext(ctx, "profile: cache put", "err", err)
 	}
+	s.mirror(ctx, tenantID, report)
 	return report, nil
 }
 
@@ -121,7 +132,27 @@ func (s *Service) Refresh(ctx context.Context, tenantID, tableAssetID string) (*
 	if err := s.Cache.Put(ctx, report); err != nil {
 		s.logger().WarnContext(ctx, "profile: cache put", "err", err)
 	}
+	s.mirror(ctx, tenantID, report)
 	return report, nil
+}
+
+// mirror writes the report JSON to object storage when configured.
+// The key shape carries timestamp so each run produces a unique
+// object — replays of the same asset never overwrite history.
+func (s *Service) mirror(ctx context.Context, tenantID string, report *Report) {
+	if s.Mirror == nil || report == nil {
+		return
+	}
+	body, err := json.Marshal(report)
+	if err != nil {
+		s.logger().WarnContext(ctx, "profile: mirror encode", "err", err)
+		return
+	}
+	stamp := report.GeneratedAt.UTC().Format("20060102T150405Z")
+	key := fmt.Sprintf("tenants/%s/profile/%s/%s.json", tenantID, report.TableAssetID, stamp)
+	if _, err := s.Mirror.Put(ctx, key, bytes.NewReader(body)); err != nil {
+		s.logger().WarnContext(ctx, "profile: mirror put", "err", err, "key", key)
+	}
 }
 
 // compute is the actual work: open executor, build + run the

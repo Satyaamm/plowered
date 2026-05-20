@@ -16,7 +16,9 @@
 package asker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -25,8 +27,9 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/aictx"
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
-	"github.com/Satyaamm/plowered/internal/core/cost"
+	"github.com/Satyaamm/plowered/internal/core/blob"
 	"github.com/Satyaamm/plowered/internal/core/connection"
+	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/internal/core/warehouse"
 	"github.com/Satyaamm/plowered/pkg/llm"
 )
@@ -122,7 +125,12 @@ type Service struct {
 	Log       Log
 	// Cost is the unified cost-tracking recorder. Optional — when nil
 	// generation + execution still work but no cost row is written.
-	Cost   cost.Recorder
+	Cost cost.Recorder
+	// Mirror is an optional ObjectStore for full prompt + SQL payload
+	// archival. When set, each generation writes a JSON blob at
+	// `tenants/{tenant}/ai/asker/{execution_id}.json` capturing
+	// schema_prompt + question + generated SQL + tokens + model.
+	Mirror blob.ObjectStore
 	Logger *slog.Logger
 
 	// TopK is how many tables we feed into the prompt as schema
@@ -240,9 +248,42 @@ func (s *Service) Ask(ctx context.Context, tenantID, connectionID, question, gen
 		"connection_id": connectionID,
 		"execution_id":  gen.ExecutionID,
 	})
+	s.mirror(ctx, tenantID, connectionID, question, schemas.String(), gen)
 	// The Log impl sets gen.ExecutionID on the in-place struct as it
 	// inserts the row. Callers get it back on the response.
 	return gen, nil
+}
+
+func (s *Service) mirror(ctx context.Context, tenantID, connectionID, question, schemaPrompt string, gen *Generation) {
+	if s.Mirror == nil {
+		return
+	}
+	body, err := json.Marshal(map[string]any{
+		"feature":       "asker",
+		"tenant_id":     tenantID,
+		"connection_id": connectionID,
+		"execution_id":  gen.ExecutionID,
+		"question":      question,
+		"schema_prompt": schemaPrompt,
+		"generated_sql": gen.GeneratedSQL,
+		"tables_used":   gen.Tables,
+		"model":         gen.Model,
+		"input_tokens":  gen.InputTokens,
+		"output_tokens": gen.OutputTokens,
+		"generated_at":  time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		s.logger().WarnContext(ctx, "asker: mirror encode", "err", err)
+		return
+	}
+	id := gen.ExecutionID
+	if id == "" {
+		id = time.Now().UTC().Format("20060102T150405.000Z")
+	}
+	key := fmt.Sprintf("tenants/%s/ai/asker/%s.json", tenantID, id)
+	if _, err := s.Mirror.Put(ctx, key, bytes.NewReader(body)); err != nil {
+		s.logger().WarnContext(ctx, "asker: mirror put", "err", err, "key", key)
+	}
 }
 
 // History returns the tenant's most recent ask executions, newest

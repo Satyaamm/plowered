@@ -108,6 +108,9 @@ type Deps struct {
 	// warehouse queries) carry their own cost.Recorder reference, so
 	// only the read side wires through here.
 	Cost cost.Reader
+	// CostBudgets exposes /v1/cost/budget. Optional — when nil, budget
+	// endpoints aren't registered (read-only mode).
+	CostBudgets cost.BudgetStore
 
 	// Contract powers /v1/contracts/* and the per-asset
 	// /v1/assets/{id}/contract surface. Optional — when nil the
@@ -205,7 +208,7 @@ func NewMux(d Deps) *http.ServeMux {
 		certificationHandlers(mux, d.Certification)
 	}
 	if d.Cost != nil {
-		costHandlers(mux, d.Cost)
+		costHandlers(mux, d.Cost, d.CostBudgets)
 	}
 	if d.Contract != nil {
 		contractHandlers(mux, d.Contract)

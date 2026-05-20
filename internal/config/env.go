@@ -89,6 +89,13 @@ func stripInlineComment(v string) string {
 	if v == "" {
 		return v
 	}
+	// Comment-only value (everything after `=` was whitespace then `#`).
+	// Without this special case the loop below — which only fires when
+	// `#` is preceded by whitespace — would miss it and we'd leak the
+	// comment text into the env var.
+	if v[0] == '#' {
+		return ""
+	}
 	if v[0] == '\'' || v[0] == '"' {
 		q := v[0]
 		for i := 1; i < len(v); i++ {

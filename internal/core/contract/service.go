@@ -2,9 +2,13 @@ package contract
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -108,7 +112,21 @@ func (s *Service) Evaluate(ctx context.Context, tenantID, contractID string) ([]
 
 	var out []*Breach
 	now := s.now().UTC()
+	// Dedupe: pull the recent breach history once, build a (kind, hash)
+	// set of what we've already recorded. A detected breach whose
+	// signature is already in the set is dropped — operators don't
+	// want a "still broken" alert every 5 minutes.
+	recent, _ := s.Store.ListBreachesForContract(ctx, tenantID, contractID, 32)
+	seen := map[string]bool{}
+	for _, b := range recent {
+		seen[breachSig(b.Kind, b.Observed)] = true
+	}
 	for _, b := range detectBreaches(c, report, now) {
+		sig := breachSig(b.Kind, b.Observed)
+		if seen[sig] {
+			continue
+		}
+		seen[sig] = true
 		saved, err := s.Store.RecordBreach(ctx, b)
 		if err != nil {
 			s.logger().WarnContext(ctx, "contract: record breach", "err", err)
@@ -118,6 +136,27 @@ func (s *Service) Evaluate(ctx context.Context, tenantID, contractID string) ([]
 		s.publishBreach(ctx, c, saved)
 	}
 	return out, nil
+}
+
+// breachSig produces a stable signature for (kind, observed payload).
+// The observed map is canonicalised by sorting keys before JSON-
+// encoding so a re-ordered field set still hashes to the same value.
+func breachSig(kind BreachKind, observed map[string]any) string {
+	keys := make([]string, 0, len(observed))
+	for k := range observed {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([][2]any, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, [2]any{k, observed[k]})
+	}
+	body, _ := json.Marshal(parts)
+	h := sha256.New()
+	_, _ = h.Write([]byte(kind))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write(body)
+	return hex.EncodeToString(h.Sum(nil))[:24]
 }
 
 // EvaluateAll iterates every active contract. Used by the periodic

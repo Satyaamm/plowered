@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -8,12 +9,16 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/cost"
 )
 
-func costHandlers(mux *http.ServeMux, r cost.Reader) {
+func costHandlers(mux *http.ServeMux, r cost.Reader, b cost.BudgetStore) {
 	if r == nil {
 		return
 	}
 	mux.HandleFunc("GET /v1/cost/recent",  recentCostHandler(r))
 	mux.HandleFunc("GET /v1/cost/summary", summaryCostHandler(r))
+	if b != nil {
+		mux.HandleFunc("GET  /v1/cost/budget", getBudgetHandler(b))
+		mux.HandleFunc("POST /v1/cost/budget", upsertBudgetHandler(b))
+	}
 }
 
 func recentCostHandler(r cost.Reader) http.HandlerFunc {
@@ -56,12 +61,72 @@ func summaryCostHandler(r cost.Reader) http.HandlerFunc {
 			byProvider[d.Provider] += d.CostUSD
 			grand += d.CostUSD
 		}
+		// Per-feature breakdown comes from the recent records — we walk
+		// up to 1000 rows in the same window. Heavier than the daily
+		// aggregate but the table tops out at a few hundred per day in
+		// v0 so the cost is bounded.
+		recent, _ := r.Recent(req.Context(), tenant, 1000)
+		byFeature := map[string]float64{}
+		for _, rec := range recent {
+			feature, _ := rec.Attributes["feature"].(string)
+			if feature == "" {
+				feature = "unknown"
+			}
+			byFeature[feature] += rec.CostUSD
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"daily":        daily,
 			"by_kind":      byKind,
 			"by_provider":  byProvider,
+			"by_feature":   byFeature,
 			"total_usd":    grand,
 		})
+	}
+}
+
+type budgetReq struct {
+	MonthlyUSD *float64 `json:"monthly_usd"`
+	WarnAtPct  int      `json:"warn_at_pct"`
+	HardAtPct  int      `json:"hard_at_pct"`
+}
+
+func getBudgetHandler(s cost.BudgetStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		tenant := mustTenant(w, req)
+		if tenant == "" {
+			return
+		}
+		b, err := s.GetBudget(req.Context(), tenant)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody{"cost_error", err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, b)
+	}
+}
+
+func upsertBudgetHandler(s cost.BudgetStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		tenant := mustTenant(w, req)
+		if tenant == "" {
+			return
+		}
+		var body budgetReq
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
+			return
+		}
+		b, err := s.UpsertBudget(req.Context(), &cost.Budget{
+			TenantID:   tenant,
+			MonthlyUSD: body.MonthlyUSD,
+			WarnAtPct:  body.WarnAtPct,
+			HardAtPct:  body.HardAtPct,
+		})
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, errorBody{"cost_error", err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, b)
 	}
 }
 

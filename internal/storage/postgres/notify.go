@@ -210,3 +210,29 @@ func (s *NotifyStore) ListRules(tenantID string) []notify.Rule {
 	rules, _ := s.ListRulesForEvent(context.Background(), tenantID, events.Event{})
 	return rules
 }
+
+// LastDeliveryPerRule returns rule_id → most-recent delivered_at. Rules
+// that have never delivered are absent. Single GROUP BY query keeps
+// this fast even with a deep deliveries table.
+func (s *NotifyStore) LastDeliveryPerRule(tenantID string) map[string]time.Time {
+	rows, err := s.pool.Query(context.Background(), `
+		SELECT rule_id::text, MAX(delivered_at)
+		  FROM notify_deliveries
+		 WHERE tenant_id = $1::uuid
+		   AND status = 'delivered'
+		   AND delivered_at IS NOT NULL
+		 GROUP BY rule_id`, tenantID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var id string
+		var at time.Time
+		if err := rows.Scan(&id, &at); err == nil {
+			out[id] = at
+		}
+	}
+	return out
+}

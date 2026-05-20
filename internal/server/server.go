@@ -87,7 +87,10 @@ type Deps struct {
 	AIProviders     aiprovider.Repo
 	Certification   *certification.Service
 	Cost            cost.Reader
+	CostBudgets     cost.BudgetStore
+	CostTenants     cost.TenantLister
 	Contract        *contract.Service
+	ContractTenants contract.TenantLister
 }
 
 // Run starts both listeners and blocks until ctx is cancelled.
@@ -235,6 +238,7 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		AIProviders:       deps.AIProviders,
 		Certification:     deps.Certification,
 		Cost:              deps.Cost,
+		CostBudgets:       deps.CostBudgets,
 		Contract:          deps.Contract,
 	})
 	// Public endpoints — never require auth. /v1/auth/me + /v1/auth/logout

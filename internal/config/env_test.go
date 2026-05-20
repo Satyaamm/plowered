@@ -77,3 +77,22 @@ func TestLoadDotEnvMalformedReturnsError(t *testing.T) {
 		t.Error("expected error for malformed line")
 	}
 }
+
+// Regression: a line like `FOO=               # comment text` must
+// resolve FOO to the empty string. The buggy parser stripped the
+// leading whitespace before the `#`, then the inline-comment stripper
+// (which only matches `#` preceded by whitespace) missed it and the
+// comment leaked into the env var. That broke RS256 key loading on
+// every fresh boot.
+func TestLoadDotEnvCommentOnlyValueIsEmpty(t *testing.T) {
+	const k = "PLOWERED_TEST_COMMENT_ONLY"
+	t.Setenv(k, "")
+	os.Unsetenv(k)
+	p := writeTemp(t, ".env", k+"=                # this is just a comment\n")
+	if err := config.LoadDotEnv(p); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := os.Getenv(k); got != "" {
+		t.Errorf("comment-only value should be empty, got %q", got)
+	}
+}

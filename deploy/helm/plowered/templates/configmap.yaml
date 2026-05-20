@@ -18,3 +18,17 @@ data:
   PLOWERED_SCHEDULER_REAPER_INTERVAL: {{ .Values.scheduler.reaperInterval | quote }}
   PLOWERED_SCHEDULER_STUCK_AFTER:     {{ .Values.scheduler.stuckAfter | quote }}
   PLOWERED_WORKER_CONCURRENCY:        {{ .Values.worker.concurrency | quote }}
+  PLOWERED_NOTIFY_WORKERS:            {{ .Values.notify.workers | quote }}
+  PLOWERED_NOTIFY_QUEUE_SIZE:         {{ .Values.notify.queueSize | quote }}
+  PLOWERED_CONTRACT_INTERVAL:         {{ .Values.contracts.evaluationInterval | quote }}
+  PLOWERED_COST_WATCHER_INTERVAL:     {{ .Values.cost.watcherInterval | quote }}
+  {{- if .Values.objectStore.bucket }}
+  PLOWERED_S3_BUCKET:                 {{ .Values.objectStore.bucket | quote }}
+  PLOWERED_S3_REGION:                 {{ .Values.objectStore.region | quote }}
+  {{- if .Values.objectStore.endpoint }}
+  PLOWERED_S3_ENDPOINT:               {{ .Values.objectStore.endpoint | quote }}
+  {{- end }}
+  {{- if .Values.objectStore.pathStyle }}
+  PLOWERED_S3_PATH_STYLE:             "1"
+  {{- end }}
+  {{- end }}

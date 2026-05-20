@@ -30,11 +30,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { glossaryApi } from "@/lib/api";
 import {
+  useAssetContract,
+  useContractBreaches,
   useDescribeAsset,
+  useEvaluateContract,
   useMembers,
   useUpdateAsset,
   useUpdateAssetOwners,
+  useUpsertContract,
 } from "@/lib/hooks";
+import {
+  Field,
+  Input,
+} from "@fluentui/react-components";
 import {
   Person16Regular,
   Edit16Regular,
@@ -239,6 +247,176 @@ export function OverviewTab({ asset }: { asset: Asset }) {
         <Subtitle2>Glossary terms</Subtitle2>
         <AssetTerms assetId={asset.id} />
       </div>
+
+      {(asset.type === "table" || asset.type === "view") && (
+        <ContractPanel assetId={asset.id} />
+      )}
+    </div>
+  );
+}
+
+function ContractPanel({ assetId }: { assetId: string }) {
+  const styles = useStyles();
+  const q = useAssetContract(assetId);
+  const upsert = useUpsertContract();
+  const evaluate = useEvaluateContract();
+  const breaches = useContractBreaches(q.data?.id ?? null, 10);
+
+  const existing = q.data;
+  const [expectedCols, setExpectedCols] = useState("");
+  const [freshness, setFreshness] = useState("");
+  const [nullRules, setNullRules] = useState("");
+  const [description, setDescription] = useState("");
+
+  // Pre-fill once when data arrives — guarded by a check so user
+  // edits aren't blown away on re-render.
+  const [hydrated, setHydrated] = useState(false);
+  if (existing && !hydrated) {
+    setExpectedCols(
+      (existing.expected_columns ?? [])
+        .map((c) => (c.type ? `${c.name}:${c.type}` : c.name))
+        .join(", "),
+    );
+    setFreshness(existing.freshness_seconds ? String(existing.freshness_seconds) : "");
+    setNullRules(
+      Object.entries(existing.null_thresholds ?? {})
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", "),
+    );
+    setDescription(existing.description ?? "");
+    setHydrated(true);
+  }
+
+  const submit = async () => {
+    const expected_columns = expectedCols
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [name, type] = entry.split(":");
+        return type ? { name: name.trim(), type: type.trim() } : { name: name.trim() };
+      });
+    const null_thresholds: Record<string, number> = {};
+    for (const pair of nullRules.split(",")) {
+      const [k, v] = pair.split("=");
+      if (k && v) {
+        const num = Number(v.trim());
+        if (!Number.isNaN(num)) null_thresholds[k.trim()] = num;
+      }
+    }
+    const freshness_seconds = Number(freshness) || 0;
+    await upsert.mutateAsync({
+      asset_id: assetId,
+      expected_columns,
+      freshness_seconds,
+      null_thresholds,
+      description,
+    });
+  };
+
+  return (
+    <div className={styles.panel}>
+      <div className={styles.panelHeader}>
+        <Subtitle2>Data contract</Subtitle2>
+        {existing && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <Badge appearance="outline">v{existing.version}</Badge>
+            <Badge
+              appearance="tint"
+              color={existing.status === "active" ? "brand" : "subtle"}
+            >
+              {existing.status}
+            </Badge>
+            <Button
+              size="small"
+              appearance="subtle"
+              disabled={evaluate.isPending}
+              onClick={() => evaluate.mutate(existing.id)}
+            >
+              {evaluate.isPending ? "Evaluating…" : "Evaluate now"}
+            </Button>
+          </div>
+        )}
+      </div>
+      <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
+        Declare expected columns, freshness budget, and per-column null
+        ceilings. The platform checks every 5 minutes against the latest
+        profile and routes breaches through the notify dispatcher.
+      </Caption1>
+      <Field
+        label="Expected columns"
+        hint='Comma-separated "name" or "name:type" pairs. Leave blank to skip schema-drift check.'
+      >
+        <Input
+          value={expectedCols}
+          onChange={(_, d) => setExpectedCols(d.value)}
+          placeholder="id:int, email:string, created_at:timestamp"
+        />
+      </Field>
+      <Field
+        label="Freshness budget (seconds)"
+        hint='0 disables the freshness check. 3600 = 1h.'
+      >
+        <Input
+          value={freshness}
+          onChange={(_, d) => setFreshness(d.value)}
+          placeholder="3600"
+        />
+      </Field>
+      <Field
+        label="Null thresholds"
+        hint='Comma-separated "column=max_null_fraction" (0.0–1.0). e.g. email=0.01'
+      >
+        <Input
+          value={nullRules}
+          onChange={(_, d) => setNullRules(d.value)}
+          placeholder="email=0.05, phone=0.20"
+        />
+      </Field>
+      <Field label="Description">
+        <Input
+          value={description}
+          onChange={(_, d) => setDescription(d.value)}
+          placeholder="What this contract guarantees, and to whom."
+        />
+      </Field>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Button
+          appearance="primary"
+          disabled={upsert.isPending}
+          onClick={submit}
+        >
+          {upsert.isPending ? <Spinner size="extra-tiny" /> : existing ? "Update contract" : "Create contract"}
+        </Button>
+      </div>
+      {breaches.data && breaches.data.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          <Caption1 className={styles.aiNoteMeta}>Recent breaches</Caption1>
+          {breaches.data.slice(0, 5).map((b) => (
+            <div
+              key={b.id}
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                padding: "4px 0",
+                fontSize: 12,
+              }}
+            >
+              <Badge
+                appearance="filled"
+                color={b.severity === "critical" || b.severity === "error" ? "danger" : "warning"}
+              >
+                {b.kind}
+              </Badge>
+              <span style={{ color: tokens.colorNeutralForeground3 }}>
+                {new Date(b.observed_at).toLocaleString()}
+              </span>
+              <span>{b.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

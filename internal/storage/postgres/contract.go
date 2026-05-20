@@ -143,6 +143,27 @@ func scanContract(row pgx.Row) (*contract.Contract, error) {
 
 // ----- Breaches -------------------------------------------------------
 
+// TenantsWithContracts returns every distinct tenant that has at least
+// one row in data_contracts. Used by the periodic Runner to scope its
+// EvaluateAll passes — fresh workspaces with no contracts cost nothing.
+func (s *ContractStore) TenantsWithContracts(ctx context.Context) ([]string, error) {
+	const q = `SELECT DISTINCT tenant_id::text FROM data_contracts WHERE status = 'active'`
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("list tenants: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 func (s *ContractStore) RecordBreach(ctx context.Context, b *contract.Breach) (*contract.Breach, error) {
 	if b == nil {
 		return nil, errors.New("contract: nil breach")

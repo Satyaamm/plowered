@@ -109,6 +109,21 @@ func TestNullThresholdNoBreachWhenWithin(t *testing.T) {
 	}
 }
 
+func TestBreachSigStableAcrossKeyOrder(t *testing.T) {
+	a := breachSig(BreachFreshness, map[string]any{"a": 1, "b": 2})
+	b := breachSig(BreachFreshness, map[string]any{"b": 2, "a": 1})
+	if a != b {
+		t.Errorf("sig depends on map iteration order: %s vs %s", a, b)
+	}
+}
+
+func TestBreachSigDiffersByKind(t *testing.T) {
+	observed := map[string]any{"x": 1}
+	if breachSig(BreachFreshness, observed) == breachSig(BreachNullThreshold, observed) {
+		t.Error("different kinds should produce different sigs")
+	}
+}
+
 func TestCombinedBreaches(t *testing.T) {
 	c := &Contract{TenantID: "t", AssetID: "a", Version: 1,
 		ExpectedColumns:  []ExpectedColumn{{Name: "id", Type: "int"}, {Name: "email", Type: "string"}},

@@ -113,6 +113,11 @@ type Repo interface {
 	AddRule(r Rule)
 	ListChannelsForTenant(tenantID string) []*ChannelConfig
 	ListRules(tenantID string) []Rule
+	// LastDeliveryPerRule returns a map of rule_id → most-recent
+	// delivered_at timestamp. Rules that have never delivered are
+	// absent from the map. Used by the rules-list UI to surface
+	// "last fired" inline.
+	LastDeliveryPerRule(tenantID string) map[string]time.Time
 }
 
 // MemoryStore is an in-process Store for tests and the embedded dev mode.
@@ -132,6 +137,23 @@ func (m *MemoryStore) AddChannel(c *ChannelConfig) {
 	m.mu.Lock()
 	m.channels[c.ID] = c
 	m.mu.Unlock()
+}
+
+// LastDeliveryPerRule scans the in-memory delivery log for the most
+// recent delivered_at per rule. Matches the Postgres semantics.
+func (m *MemoryStore) LastDeliveryPerRule(tenantID string) map[string]time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]time.Time{}
+	for _, d := range m.deliveries {
+		if d.TenantID != tenantID || d.Status != DeliveryDelivered {
+			continue
+		}
+		if existing, ok := out[d.RuleID]; !ok || d.DeliveredAt.After(existing) {
+			out[d.RuleID] = d.DeliveredAt
+		}
+	}
+	return out
 }
 
 // ListRules returns rules visible to a tenant (rules with empty TenantID
