@@ -24,7 +24,8 @@ import {
 import { Dismiss24Regular } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { useCreateCheck, useUpdateCheck } from "@/lib/hooks";
+import { useAssetColumns, useCreateCheck, useUpdateCheck } from "@/lib/hooks";
+import type { AssetColumn } from "@/lib/hooks";
 import { InfoLabel } from "@/components/info-label";
 import type { Check } from "@/lib/types-orchestration";
 
@@ -241,7 +242,7 @@ export function CheckDesigner({ open, onClose, existing, fixedAsset }: Props) {
 
           <div className={styles.configBlock}>
             <Body1>{TYPES.find((t) => t.value === type)?.help}</Body1>
-            <ConfigFields type={type} config={config} setConfig={setConfig} />
+            <ConfigFields type={type} config={config} setConfig={setConfig} assetId={assetId} />
           </div>
 
           <Switch
@@ -276,10 +277,12 @@ function ConfigFields({
   type,
   config,
   setConfig,
+  assetId,
 }: {
   type: string;
   config: Record<string, string>;
   setConfig: (c: Record<string, string>) => void;
+  assetId: string;
 }) {
   const set = (k: string, v: string) => setConfig({ ...config, [k]: v });
 
@@ -298,15 +301,26 @@ function ConfigFields({
   if (type === "not_null") {
     return (
       <Field label="Column" required>
-        <Input value={config.column ?? ""} onChange={(_, d) => set("column", d.value)} placeholder="email" />
+        <ColumnPicker
+          assetId={assetId}
+          value={config.column ?? ""}
+          onChange={(v) => set("column", v)}
+          placeholder="email"
+        />
       </Field>
     );
   }
   if (type === "freshness") {
     return (
       <>
-        <Field label="Timestamp column" required>
-          <Input value={config.column ?? ""} onChange={(_, d) => set("column", d.value)} placeholder="updated_at" />
+        <Field label="Timestamp column" required hint="Pick a timestamp/date column from the asset.">
+          <ColumnPicker
+            assetId={assetId}
+            value={config.column ?? ""}
+            onChange={(v) => set("column", v)}
+            placeholder="updated_at"
+            filter={(c) => /time|date|stamp/i.test(c.data_type)}
+          />
         </Field>
         <Field label="Max age (seconds)" required hint="Fail when newest row is older than this">
           <Input value={config.max_age_seconds ?? ""} onChange={(_, d) => set("max_age_seconds", d.value)} placeholder="86400" />
@@ -316,8 +330,13 @@ function ConfigFields({
   }
   if (type === "uniqueness") {
     return (
-      <Field label="Column(s)" required hint="Comma-separated for composite uniqueness">
-        <Input value={config.columns ?? ""} onChange={(_, d) => set("columns", d.value)} placeholder="user_id" />
+      <Field label="Column(s)" required hint="Composite uniqueness: pick multiple.">
+        <MultiColumnPicker
+          assetId={assetId}
+          value={config.columns ?? ""}
+          onChange={(v) => set("columns", v)}
+          placeholder="user_id"
+        />
       </Field>
     );
   }
@@ -374,4 +393,116 @@ function parseConfig(type: string, c: Record<string, string>): Record<string, un
     out.columns = (out.columns as string).split(",").map((s) => s.trim()).filter(Boolean);
   }
   return out;
+}
+
+// ColumnPicker renders a single-column Combobox driven by the asset's
+// catalog children. Freeform — the operator can still type a column
+// name we haven't crawled yet (eg right after a schema change).
+function ColumnPicker({
+  assetId,
+  value,
+  onChange,
+  placeholder,
+  filter,
+}: {
+  assetId: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  filter?: (c: AssetColumn) => boolean;
+}) {
+  const cols = useAssetColumns(assetId || null);
+  const list = filter ? (cols.data ?? []).filter(filter) : cols.data ?? [];
+  if (list.length === 0) {
+    return (
+      <Input
+        value={value}
+        onChange={(_, d) => onChange(d.value)}
+        placeholder={placeholder}
+      />
+    );
+  }
+  return (
+    <Combobox
+      value={value}
+      selectedOptions={value ? [value] : []}
+      onOptionSelect={(_, d) => onChange(d.optionValue ?? "")}
+      onInput={(e) => onChange((e.target as HTMLInputElement).value)}
+      placeholder={placeholder}
+      freeform
+    >
+      {list.map((c) => (
+        <Option key={c.id} value={c.name} text={c.name}>
+          {c.name}
+          {c.data_type ? ` — ${c.data_type}` : ""}
+        </Option>
+      ))}
+    </Combobox>
+  );
+}
+
+// MultiColumnPicker handles comma-separated column lists (composite
+// uniqueness checks). Stores the value as a CSV string to stay
+// backward-compatible with the check config schema; the UI lets the
+// user toggle checkboxes.
+function MultiColumnPicker({
+  assetId,
+  value,
+  onChange,
+  placeholder,
+}: {
+  assetId: string;
+  value: string;
+  onChange: (csv: string) => void;
+  placeholder?: string;
+}) {
+  const cols = useAssetColumns(assetId || null);
+  const selected = value
+    ? value.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const toggle = (name: string) => {
+    const has = selected.includes(name);
+    const next = has
+      ? selected.filter((n) => n !== name)
+      : [...selected, name];
+    onChange(next.join(", "));
+  };
+  const list = cols.data ?? [];
+  if (list.length === 0) {
+    return (
+      <Input
+        value={value}
+        onChange={(_, d) => onChange(d.value)}
+        placeholder={placeholder}
+      />
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 160, overflowY: "auto" }}>
+        {list.map((c) => {
+          const on = selected.includes(c.name);
+          return (
+            <label
+              key={c.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12,
+                padding: "2px 8px",
+                border: "1px solid #E5E7EB",
+                borderRadius: 4,
+                background: on ? "#F3E9D8" : "transparent",
+                cursor: "pointer",
+              }}
+            >
+              <input type="checkbox" checked={on} onChange={() => toggle(c.name)} />
+              {c.name}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

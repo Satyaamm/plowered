@@ -1,7 +1,45 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { call } from "./_fetch";
+
+// AssetColumn is the slim shape every column-picker UI needs. Driven
+// by the lineage:defines walk the Schema tab already uses.
+export interface AssetColumn {
+  id: string;
+  name: string;
+  data_type: string;
+  ordinal: number;
+}
+
+// useAssetColumns returns the columns of a table/view asset, sorted
+// by ordinal position. Powers column pickers across check designer
+// and contract editor. Disabled when assetId is blank.
+export function useAssetColumns(assetId: string | null) {
+  return useQuery({
+    queryKey: ["asset-columns", assetId],
+    enabled: !!assetId,
+    queryFn: async () => {
+      const r = await api.children(assetId as string);
+      const neighbors = ((r as any).neighbors ?? []) as Array<{
+        id: string;
+        name: string;
+        type: string;
+        properties?: Record<string, any>;
+      }>;
+      return neighbors
+        .filter((n) => n.type === "column")
+        .map<AssetColumn>((n) => ({
+          id: n.id,
+          name: n.name,
+          data_type: String(n.properties?.data_type ?? ""),
+          ordinal: Number(n.properties?.ordinal_pos ?? 0),
+        }))
+        .sort((a, b) => a.ordinal - b.ordinal);
+    },
+  });
+}
 
 // Asset is a minimal shape covering the fields these hooks touch. The
 // full Asset type lives in lib/types.ts — kept narrow here so the

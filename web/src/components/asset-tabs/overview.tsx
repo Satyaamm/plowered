@@ -30,6 +30,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { glossaryApi } from "@/lib/api";
 import {
+  useAssetColumns,
   useAssetContract,
   useContractBreaches,
   useDescribeAsset,
@@ -262,57 +263,67 @@ function ContractPanel({ assetId }: { assetId: string }) {
   const evaluate = useEvaluateContract();
   const breaches = useContractBreaches(q.data?.id ?? null, 10);
 
+  const cols = useAssetColumns(assetId);
   const existing = q.data;
-  const [expectedCols, setExpectedCols] = useState("");
+  // Structured state — selected column names + type overrides + null
+  // thresholds. The wire format ({name,type} pairs + {column:fraction}
+  // map) is built at submit time, so the contract API is unchanged.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [colTypes, setColTypes] = useState<Record<string, string>>({});
+  const [nullThresholds, setNullThresholds] = useState<Record<string, number>>({});
   const [freshness, setFreshness] = useState("");
-  const [nullRules, setNullRules] = useState("");
   const [description, setDescription] = useState("");
 
-  // Pre-fill once when data arrives — guarded by a check so user
-  // edits aren't blown away on re-render.
   const [hydrated, setHydrated] = useState(false);
   if (existing && !hydrated) {
-    setExpectedCols(
-      (existing.expected_columns ?? [])
-        .map((c) => (c.type ? `${c.name}:${c.type}` : c.name))
-        .join(", "),
-    );
+    const sel = new Set<string>();
+    const types: Record<string, string> = {};
+    for (const c of existing.expected_columns ?? []) {
+      sel.add(c.name);
+      if (c.type) types[c.name] = c.type;
+    }
+    setSelected(sel);
+    setColTypes(types);
+    setNullThresholds(existing.null_thresholds ?? {});
     setFreshness(existing.freshness_seconds ? String(existing.freshness_seconds) : "");
-    setNullRules(
-      Object.entries(existing.null_thresholds ?? {})
-        .map(([k, v]) => `${k}=${v}`)
-        .join(", "),
-    );
     setDescription(existing.description ?? "");
     setHydrated(true);
   }
 
-  const submit = async () => {
-    const expected_columns = expectedCols
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((entry) => {
-        const [name, type] = entry.split(":");
-        return type ? { name: name.trim(), type: type.trim() } : { name: name.trim() };
-      });
-    const null_thresholds: Record<string, number> = {};
-    for (const pair of nullRules.split(",")) {
-      const [k, v] = pair.split("=");
-      if (k && v) {
-        const num = Number(v.trim());
-        if (!Number.isNaN(num)) null_thresholds[k.trim()] = num;
+  const toggleCol = (name: string, dataType: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+        setNullThresholds((t) => {
+          const { [name]: _drop, ...rest } = t;
+          return rest;
+        });
+      } else {
+        next.add(name);
+        if (dataType && !colTypes[name]) {
+          setColTypes((t) => ({ ...t, [name]: dataType }));
+        }
       }
-    }
+      return next;
+    });
+  };
+
+  const submit = async () => {
+    const expected_columns = Array.from(selected).map((name) =>
+      colTypes[name] ? { name, type: colTypes[name] } : { name },
+    );
     const freshness_seconds = Number(freshness) || 0;
     await upsert.mutateAsync({
       asset_id: assetId,
       expected_columns,
       freshness_seconds,
-      null_thresholds,
+      null_thresholds: nullThresholds,
       description,
     });
   };
+
+  const colList = cols.data ?? [];
 
   return (
     <div className={styles.panel}>
@@ -345,14 +356,47 @@ function ContractPanel({ assetId }: { assetId: string }) {
       </Caption1>
       <Field
         label="Expected columns"
-        hint='Comma-separated "name" or "name:type" pairs. Leave blank to skip schema-drift check.'
+        hint={
+          colList.length === 0
+            ? "Catalog hasn't crawled this asset's columns yet. Run a crawl/profile to populate the picker."
+            : "Tick the columns the contract guarantees. Types pre-fill from the catalog; edit if the contract pins a stricter shape."
+        }
       >
-        <Input
-          value={expectedCols}
-          onChange={(_, d) => setExpectedCols(d.value)}
-          placeholder="id:int, email:string, created_at:timestamp"
-        />
+        {colList.length === 0 ? (
+          <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
+            No columns available.
+          </Caption1>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "auto 1fr 140px",
+              gap: 6,
+              maxHeight: 260,
+              overflowY: "auto",
+              border: `1px solid ${tokens.colorNeutralStroke2}`,
+              borderRadius: 4,
+              padding: 8,
+            }}
+          >
+            {colList.map((c) => {
+              const on = selected.has(c.name);
+              return (
+                <ContractColRow
+                  key={c.id}
+                  on={on}
+                  name={c.name}
+                  type={on ? colTypes[c.name] ?? "" : c.data_type}
+                  hint={!on ? c.data_type : ""}
+                  onToggle={() => toggleCol(c.name, c.data_type)}
+                  onTypeChange={(v) => setColTypes((t) => ({ ...t, [c.name]: v }))}
+                />
+              );
+            })}
+          </div>
+        )}
       </Field>
+
       <Field
         label="Freshness budget (seconds)"
         hint='0 disables the freshness check. 3600 = 1h.'
@@ -363,16 +407,47 @@ function ContractPanel({ assetId }: { assetId: string }) {
           placeholder="3600"
         />
       </Field>
-      <Field
-        label="Null thresholds"
-        hint='Comma-separated "column=max_null_fraction" (0.0–1.0). e.g. email=0.01'
-      >
-        <Input
-          value={nullRules}
-          onChange={(_, d) => setNullRules(d.value)}
-          placeholder="email=0.05, phone=0.20"
-        />
-      </Field>
+
+      {selected.size > 0 && (
+        <Field
+          label="Null thresholds"
+          hint="Max acceptable null fraction per selected column (0.0–1.0). Leave a row blank to skip."
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 120px",
+              gap: 6,
+              maxHeight: 200,
+              overflowY: "auto",
+            }}
+          >
+            {Array.from(selected).map((name) => {
+              const v = nullThresholds[name];
+              return (
+                <ContractNullRow
+                  key={name}
+                  name={name}
+                  value={v === undefined ? "" : String(v)}
+                  onChange={(raw) => {
+                    if (raw === "") {
+                      setNullThresholds((t) => {
+                        const { [name]: _drop, ...rest } = t;
+                        return rest;
+                      });
+                      return;
+                    }
+                    const num = Number(raw);
+                    if (!Number.isNaN(num)) {
+                      setNullThresholds((t) => ({ ...t, [name]: num }));
+                    }
+                  }}
+                />
+              );
+            })}
+          </div>
+        </Field>
+      )}
       <Field label="Description">
         <Input
           value={description}
@@ -723,6 +798,89 @@ function AISuggestButton({ assetId }: { assetId: string }) {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+    </>
+  );
+}
+
+function ContractColRow({
+  on,
+  name,
+  type,
+  hint,
+  onToggle,
+  onTypeChange,
+}: {
+  on: boolean;
+  name: string;
+  type: string;
+  hint: string;
+  onToggle: () => void;
+  onTypeChange: (v: string) => void;
+}) {
+  return (
+    <>
+      <input
+        type="checkbox"
+        checked={on}
+        onChange={onToggle}
+        style={{ alignSelf: "center" }}
+      />
+      <label
+        onClick={onToggle}
+        style={{
+          fontSize: 13,
+          cursor: "pointer",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          alignSelf: "center",
+        }}
+      >
+        {name}
+        {hint ? (
+          <span style={{ color: tokens.colorNeutralForeground3, marginLeft: 8 }}>
+            {hint}
+          </span>
+        ) : null}
+      </label>
+      {on ? (
+        <Input
+          value={type}
+          onChange={(_, d) => onTypeChange(d.value)}
+          placeholder="type (optional)"
+          size="small"
+        />
+      ) : (
+        <span />
+      )}
+    </>
+  );
+}
+
+function ContractNullRow({
+  name,
+  value,
+  onChange,
+}: {
+  name: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <>
+      <span
+        style={{
+          fontSize: 13,
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          alignSelf: "center",
+        }}
+      >
+        {name}
+      </span>
+      <Input
+        value={value}
+        onChange={(_, d) => onChange(d.value)}
+        placeholder="0.05"
+        size="small"
+      />
     </>
   );
 }
