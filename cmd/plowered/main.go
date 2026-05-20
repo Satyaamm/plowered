@@ -53,6 +53,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/asker"
 	"github.com/Satyaamm/plowered/internal/core/blob"
 	"github.com/Satyaamm/plowered/internal/core/certification"
+	"github.com/Satyaamm/plowered/internal/core/contract"
 	"github.com/Satyaamm/plowered/internal/core/describer"
 	"github.com/Satyaamm/plowered/internal/core/migration"
 	"github.com/Satyaamm/plowered/internal/core/policy"
@@ -446,6 +447,12 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 				Store: postgres.NewCertificationStore(pool),
 			},
 			Cost: costStore,
+			Contract: &contract.Service{
+				Store:   postgres.NewContractStore(pool),
+				Profile: profileStore,
+				Events:  bus,
+				Logger:  logger,
+			},
 		}, func() {
 			if enqClose != nil {
 				_ = enqClose()

@@ -20,6 +20,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/api/middleware"
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
 	"github.com/Satyaamm/plowered/internal/core/certification"
+	"github.com/Satyaamm/plowered/internal/core/contract"
 	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/internal/core/audit"
 	"github.com/Satyaamm/plowered/internal/core/auth"
@@ -86,6 +87,7 @@ type Deps struct {
 	AIProviders     aiprovider.Repo
 	Certification   *certification.Service
 	Cost            cost.Reader
+	Contract        *contract.Service
 }
 
 // Run starts both listeners and blocks until ctx is cancelled.
@@ -233,6 +235,7 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		AIProviders:       deps.AIProviders,
 		Certification:     deps.Certification,
 		Cost:              deps.Cost,
+		Contract:          deps.Contract,
 	})
 	// Public endpoints — never require auth. /v1/auth/me + /v1/auth/logout
 	// deliberately omitted: those need an active session.

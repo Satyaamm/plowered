@@ -25,3 +25,4 @@ export * from "./use-ask";
 export * from "./use-migrations";
 export * from "./use-certifications";
 export * from "./use-cost";
+export * from "./use-contracts";

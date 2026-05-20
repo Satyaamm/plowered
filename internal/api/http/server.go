@@ -14,6 +14,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
 	"github.com/Satyaamm/plowered/internal/core/audit"
 	"github.com/Satyaamm/plowered/internal/core/certification"
+	"github.com/Satyaamm/plowered/internal/core/contract"
 	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/internal/core/connection"
 	"github.com/Satyaamm/plowered/internal/core/deleted"
@@ -107,6 +108,11 @@ type Deps struct {
 	// warehouse queries) carry their own cost.Recorder reference, so
 	// only the read side wires through here.
 	Cost cost.Reader
+
+	// Contract powers /v1/contracts/* and the per-asset
+	// /v1/assets/{id}/contract surface. Optional — when nil the
+	// routes aren't registered.
+	Contract *contract.Service
 }
 
 // NewMux returns an *http.ServeMux with every registered route. Callers
@@ -200,6 +206,9 @@ func NewMux(d Deps) *http.ServeMux {
 	}
 	if d.Cost != nil {
 		costHandlers(mux, d.Cost)
+	}
+	if d.Contract != nil {
+		contractHandlers(mux, d.Contract)
 	}
 	if d.Catalog != nil && d.Policies != nil {
 		accessHandlers(mux, d.Catalog, d.Policies, d.Identity)

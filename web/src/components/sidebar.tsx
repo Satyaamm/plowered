@@ -31,6 +31,7 @@ import {
   People24Regular,
   Ribbon24Regular,
   Money24Regular,
+  DocumentBulletList24Regular,
   ChevronDoubleLeft20Regular,
   ChevronDoubleRight20Regular,
 } from "@fluentui/react-icons";
@@ -76,8 +77,9 @@ const GROUPS: Group[] = [
   {
     heading: "DATA QUALITY",
     items: [
-      { label: "Checks",     href: "/checks", icon: <CheckmarkCircle24Regular />, tour: "nav-checks" },
-      { label: "Alerts",     href: "/alerts", icon: <Alert24Regular />,            tour: "nav-alerts" },
+      { label: "Checks",     href: "/checks",    icon: <CheckmarkCircle24Regular />, tour: "nav-checks" },
+      { label: "Contracts",  href: "/contracts", icon: <DocumentBulletList24Regular />, tour: "nav-contracts" },
+      { label: "Alerts",     href: "/alerts",    icon: <Alert24Regular />,            tour: "nav-alerts" },
     ],
   },
   {
