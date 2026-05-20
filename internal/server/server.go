@@ -19,6 +19,8 @@ import (
 	apihttp "github.com/Satyaamm/plowered/internal/api/http"
 	"github.com/Satyaamm/plowered/internal/api/middleware"
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/certification"
+	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/internal/core/audit"
 	"github.com/Satyaamm/plowered/internal/core/auth"
 	"github.com/Satyaamm/plowered/internal/core/deleted"
@@ -82,6 +84,8 @@ type Deps struct {
 	SearchSearcher  *search.Searcher
 	Jobs            jobs.Repo
 	AIProviders     aiprovider.Repo
+	Certification   *certification.Service
+	Cost            cost.Reader
 }
 
 // Run starts both listeners and blocks until ctx is cancelled.
@@ -227,6 +231,8 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		SearchSearcher:    deps.SearchSearcher,
 		Jobs:              deps.Jobs,
 		AIProviders:       deps.AIProviders,
+		Certification:     deps.Certification,
+		Cost:              deps.Cost,
 	})
 	// Public endpoints — never require auth. /v1/auth/me + /v1/auth/logout
 	// deliberately omitted: those need an active session.

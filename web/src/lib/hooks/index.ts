@@ -23,3 +23,5 @@ export * from "./use-account";
 export * from "./use-assets";
 export * from "./use-ask";
 export * from "./use-migrations";
+export * from "./use-certifications";
+export * from "./use-cost";

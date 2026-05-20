@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Satyaamm/plowered/internal/core/connection"
+	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/internal/core/events"
 	"github.com/Satyaamm/plowered/internal/core/profile"
 	"github.com/Satyaamm/plowered/internal/core/warehouse"
@@ -36,7 +37,10 @@ type Service struct {
 	Conns      ConnectionReader
 	Checkpoint CheckpointStore // optional; required for ModeIncremental
 	Events     events.Bus      // optional; published lifecycle events drive notifications
-	Logger     *slog.Logger
+	// Cost records per-query warehouse cost. Optional — when nil
+	// migrations run unchanged but no cost rows are written.
+	Cost   cost.Recorder
+	Logger *slog.Logger
 
 	// BatchSize controls how many rows we INSERT per dest round-trip.
 	// 500 is a comfortable default — small enough that one bad batch
@@ -175,7 +179,31 @@ func (s *Service) ExecuteRun(ctx context.Context, tenantID, runID string) error 
 		s.logger().WarnContext(ctx, "migration: finish run", "err", finErr)
 	}
 	s.publishMigrationFinished(ctx, plan, run, rowsRead, rowsWritten, runErr)
+	s.recordMigrationCost(ctx, tenantID, plan, run, rowsRead)
 	return runErr
+}
+
+// recordMigrationCost writes a single summary row per Run rather than
+// per-batch. v0 takes the simpler aggregate; per-warehouse split-out
+// is a follow-up if anyone wants more precision than "this migration
+// cost $X total".
+func (s *Service) recordMigrationCost(ctx context.Context, tenantID string, plan *Plan, run *Run, rowsRead int64) {
+	if s.Cost == nil || run == nil {
+		return
+	}
+	srcConn, err := s.Conns.Get(ctx, tenantID, plan.SourceConnectionID)
+	if err != nil {
+		return
+	}
+	elapsed := time.Since(run.StartedAt)
+	cost.RecordWarehouseQuery(ctx, s.Cost, tenantID, string(srcConn.Type),
+		elapsed, rowsRead, map[string]any{
+			"feature":   "migration",
+			"plan_id":   plan.ID,
+			"plan_name": plan.Name,
+			"run_id":    run.ID,
+			"mode":      string(plan.Mode),
+		})
 }
 
 // RunPlan is the sync convenience that combines EnqueueRun + ExecuteRun.

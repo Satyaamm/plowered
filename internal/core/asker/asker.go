@@ -25,6 +25,7 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/aictx"
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/internal/core/connection"
 	"github.com/Satyaamm/plowered/internal/core/warehouse"
 	"github.com/Satyaamm/plowered/pkg/llm"
@@ -119,7 +120,10 @@ type Service struct {
 	Conns     ConnectionReader
 	Warehouse *warehouse.MultiFactory
 	Log       Log
-	Logger    *slog.Logger
+	// Cost is the unified cost-tracking recorder. Optional — when nil
+	// generation + execution still work but no cost row is written.
+	Cost   cost.Recorder
+	Logger *slog.Logger
 
 	// TopK is how many tables we feed into the prompt as schema
 	// context. Default 5 — enough breadth for most questions without
@@ -231,6 +235,11 @@ func (s *Service) Ask(ctx context.Context, tenantID, connectionID, question, gen
 	}); err != nil {
 		return nil, fmt.Errorf("record generation: %w", err)
 	}
+	cost.RecordAI(ctx, s.Cost, tenantID, gen.Model, gen.InputTokens, gen.OutputTokens, map[string]any{
+		"feature":       "asker_generate",
+		"connection_id": connectionID,
+		"execution_id":  gen.ExecutionID,
+	})
 	// The Log impl sets gen.ExecutionID on the in-place struct as it
 	// inserts the row. Callers get it back on the response.
 	return gen, nil
@@ -304,6 +313,14 @@ func (s *Service) Run(ctx context.Context, tenantID, executionID string) (*RunRe
 	out.ElapsedMs = time.Since(start).Milliseconds()
 	if err := s.Log.RecordExecuted(ctx, tenantID, executionID, out.RowCount, out.ElapsedMs, ""); err != nil {
 		s.logger().WarnContext(ctx, "asker: record executed", "err", err)
+	}
+	if conn, cErr := s.Conns.Get(ctx, tenantID, exec.ConnectionID); cErr == nil {
+		cost.RecordWarehouseQuery(ctx, s.Cost, tenantID, string(conn.Type),
+			time.Since(start), int64(out.RowCount), map[string]any{
+				"feature":       "asker_execute",
+				"connection_id": exec.ConnectionID,
+				"execution_id":  executionID,
+			})
 	}
 	return out, nil
 }

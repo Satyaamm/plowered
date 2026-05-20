@@ -5,8 +5,17 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Badge,
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  Field,
+  Spinner,
   Tab,
   TabList,
+  Textarea,
   Tooltip,
   makeStyles,
   tokens,
@@ -25,6 +34,12 @@ import { ProfileTab } from "@/components/asset-tabs/profile";
 import { ExploreTab } from "@/components/asset-tabs/explore";
 import { QualityTab } from "@/components/asset-tabs/quality";
 import { ActivityTab } from "@/components/asset-tabs/activity";
+import {
+  Certification,
+  useAssetCertifications,
+  useProposeCertification,
+  useRevokeCertification,
+} from "@/lib/hooks";
 
 const useStyles = makeStyles({
   tabBar: {
@@ -62,6 +77,7 @@ export default function AssetPage({
   });
 
   const [tab, setTab] = useState("overview");
+  const [certDialogOpen, setCertDialogOpen] = useState(false);
 
   if (asset.isLoading) return <LoadingState />;
   if (asset.error) return <ErrorBanner error={asset.error} />;
@@ -90,13 +106,11 @@ export default function AssetPage({
             >
               Refresh
             </Button>
-            <Button
-              appearance="primary"
-              icon={<CertificateRegular />}
-              disabled
-            >
-              Certify (coming soon)
-            </Button>
+            <CertificationAction
+              assetId={a.id}
+              open={certDialogOpen}
+              setOpen={setCertDialogOpen}
+            />
           </>
         }
       />
@@ -115,6 +129,7 @@ export default function AssetPage({
         >
           trust: {a.trust ?? "unverified"}
         </Badge>
+        <CertificationBadge assetId={a.id} />
         {(a.tags ?? []).slice(0, 6).map((t: string) => (
           <Tooltip key={t} content={t} relationship="label">
             <Badge
@@ -158,5 +173,109 @@ export default function AssetPage({
         {tab === "activity" && <ActivityTab assetId={a.id} />}
       </div>
     </>
+  );
+}
+
+function CertificationBadge({ assetId }: { assetId: string }) {
+  const q = useAssetCertifications(assetId);
+  const c: Certification | null = q.data?.latest ?? null;
+  if (!c) return null;
+  const color =
+    c.status === "certified" ? "success"
+    : c.status === "proposed" ? "warning"
+    : c.status === "rejected" ? "danger"
+    : "subtle";
+  return (
+    <Tooltip content={c.review_note || c.justification || ""} relationship="label">
+      <Badge appearance="filled" color={color}>cert: {c.status}</Badge>
+    </Tooltip>
+  );
+}
+
+function CertificationAction({
+  assetId,
+  open,
+  setOpen,
+}: {
+  assetId: string;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+}) {
+  const q = useAssetCertifications(assetId);
+  const propose = useProposeCertification(assetId);
+  const revoke = useRevokeCertification(assetId);
+  const [note, setNote] = useState("");
+
+  const latest = q.data?.latest;
+  const isCertified = latest?.status === "certified";
+  const isPending = latest?.status === "proposed";
+
+  if (isPending) {
+    return (
+      <Button appearance="primary" icon={<CertificateRegular />} disabled>
+        Pending review
+      </Button>
+    );
+  }
+  if (isCertified) {
+    return (
+      <Button
+        appearance="outline"
+        icon={<CertificateRegular />}
+        onClick={() => {
+          const reason = window.prompt("Why revoke?", "");
+          if (reason !== null) revoke.mutate(reason);
+        }}
+        disabled={revoke.isPending}
+      >
+        {revoke.isPending ? "Revoking…" : "Revoke certification"}
+      </Button>
+    );
+  }
+  return (
+    <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
+      <Button
+        appearance="primary"
+        icon={<CertificateRegular />}
+        onClick={() => setOpen(true)}
+      >
+        Propose certification
+      </Button>
+      <DialogSurface>
+        <DialogBody>
+          <DialogTitle>Propose certification</DialogTitle>
+          <DialogContent>
+            <Field
+              label="Justification"
+              hint="Why is this asset trustworthy? Stewards see this in the review queue."
+            >
+              <Textarea
+                value={note}
+                onChange={(_, d) => setNote(d.value)}
+                rows={4}
+              />
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setOpen(false)}>Cancel</Button>
+            <Button
+              appearance="primary"
+              disabled={propose.isPending}
+              onClick={async () => {
+                try {
+                  await propose.mutateAsync(note.trim());
+                  setNote("");
+                  setOpen(false);
+                } catch {
+                  // toast surfaces the error
+                }
+              }}
+            >
+              {propose.isPending ? <Spinner size="extra-tiny" /> : "Submit"}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   );
 }

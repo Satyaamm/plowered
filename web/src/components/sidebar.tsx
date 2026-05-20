@@ -29,6 +29,8 @@ import {
   Eye24Regular,
   Sparkle24Regular,
   People24Regular,
+  Ribbon24Regular,
+  Money24Regular,
   ChevronDoubleLeft20Regular,
   ChevronDoubleRight20Regular,
 } from "@fluentui/react-icons";
@@ -81,9 +83,16 @@ const GROUPS: Group[] = [
   {
     heading: "GOVERNANCE",
     items: [
-      { label: "Policies",   href: "/admin/policies", icon: <Shield24Regular />,   tour: "nav-policies" },
-      { label: "Glossary",   href: "/glossary",       icon: <Document24Regular />, tour: "nav-glossary" },
-      { label: "Access",     href: "/access",         icon: <Eye24Regular />,      tour: "nav-access" },
+      { label: "Policies",       href: "/admin/policies", icon: <Shield24Regular />,   tour: "nav-policies" },
+      { label: "Glossary",       href: "/glossary",       icon: <Document24Regular />, tour: "nav-glossary" },
+      { label: "Access",         href: "/access",         icon: <Eye24Regular />,      tour: "nav-access" },
+      { label: "Certifications", href: "/certifications", icon: <Ribbon24Regular />,   tour: "nav-certifications" },
+    ],
+  },
+  {
+    heading: "OPERATIONS",
+    items: [
+      { label: "Cost",       href: "/cost",       icon: <Money24Regular />,    tour: "nav-cost" },
     ],
   },
   {

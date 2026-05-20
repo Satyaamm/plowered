@@ -13,6 +13,8 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
 	"github.com/Satyaamm/plowered/internal/core/audit"
+	"github.com/Satyaamm/plowered/internal/core/certification"
+	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/internal/core/connection"
 	"github.com/Satyaamm/plowered/internal/core/deleted"
 	"github.com/Satyaamm/plowered/internal/core/dsr"
@@ -95,6 +97,16 @@ type Deps struct {
 	// wired so api keys land sealed. Optional — when nil, the routes
 	// aren't registered.
 	AIProviders aiprovider.Repo
+
+	// Certification powers /v1/assets/{id}/certifications +
+	// /v1/certifications/* (review queue, approve, reject, revoke).
+	// Optional — when nil the routes aren't registered.
+	Certification *certification.Service
+
+	// Cost is the read surface for /v1/cost/*. Writers (AI completions,
+	// warehouse queries) carry their own cost.Recorder reference, so
+	// only the read side wires through here.
+	Cost cost.Reader
 }
 
 // NewMux returns an *http.ServeMux with every registered route. Callers
@@ -182,6 +194,12 @@ func NewMux(d Deps) *http.ServeMux {
 	}
 	if d.AIProviders != nil {
 		aiProviderHandlers(mux, d.AIProviders, d.Vault)
+	}
+	if d.Certification != nil {
+		certificationHandlers(mux, d.Certification)
+	}
+	if d.Cost != nil {
+		costHandlers(mux, d.Cost)
 	}
 	if d.Catalog != nil && d.Policies != nil {
 		accessHandlers(mux, d.Catalog, d.Policies, d.Identity)

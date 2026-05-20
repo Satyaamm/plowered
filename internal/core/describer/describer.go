@@ -24,6 +24,7 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/aictx"
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/cost"
 	"github.com/Satyaamm/plowered/pkg/llm"
 )
 
@@ -60,7 +61,11 @@ type Service struct {
 	Context  *aictx.Builder
 	Resolver *aiprovider.Resolver
 	Log      Log
-	Logger   *slog.Logger
+	// Cost is the unified cost-tracking recorder. Optional — when nil,
+	// suggestions still ship but no cost row is written. Wired via
+	// cmd/plowered/main.go alongside the Postgres cost store.
+	Cost   cost.Recorder
+	Logger *slog.Logger
 
 	// MaxOutputTokens caps generation length. Defaults to 300 which
 	// translates to ~2 dense sentences — the prompt asks for brevity
@@ -116,6 +121,10 @@ func (s *Service) Suggest(ctx context.Context, tenantID, assetID, generatedBy st
 		// caller; we just lose the audit row.
 		s.logger().WarnContext(ctx, "describer: log record", "err", err)
 	}
+	cost.RecordAI(ctx, s.Cost, tenantID, out.Model, out.InputTokens, out.OutputTokens, map[string]any{
+		"feature":  "describer",
+		"asset_id": assetID,
+	})
 	return out, nil
 }
 

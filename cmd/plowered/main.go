@@ -47,8 +47,9 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/pipeline/tasks/taskdeps"
 	"github.com/Satyaamm/plowered/internal/core/aictx"
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
-	"github.com/Satyaamm/plowered/internal/core/blob"
 	"github.com/Satyaamm/plowered/internal/core/asker"
+	"github.com/Satyaamm/plowered/internal/core/blob"
+	"github.com/Satyaamm/plowered/internal/core/certification"
 	"github.com/Satyaamm/plowered/internal/core/describer"
 	"github.com/Satyaamm/plowered/internal/core/migration"
 	"github.com/Satyaamm/plowered/internal/core/policy"
@@ -311,10 +312,12 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 		Tables:   profileStore,
 		Profiles: profileStore,
 	}
+	costStore := postgres.NewCostStore(pool)
 	describerSvc := &describer.Service{
 		Context:  contextBuilder,
 		Resolver: aiResolver,
 		Log:      aiDescStore,
+		Cost:     costStore,
 		Logger:   logger,
 	}
 	embeddingStore := postgres.NewEmbeddingStore(pool)
@@ -334,6 +337,7 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 		Conns:     connectionStore,
 		Warehouse: warehouseFactory,
 		Log:       postgres.NewAIQueryStore(pool),
+		Cost:      costStore,
 		Logger:    logger,
 	}
 	// Migration: SQL → SQL data movement. Reuses the warehouse factory
@@ -351,6 +355,7 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 		Conns:      connectionStore,
 		Checkpoint: migration.NewBlobCheckpointStore(objectStore),
 		Events:     bus,
+		Cost:       costStore,
 		Logger:     logger,
 	}
 	extras := workerExtras{
@@ -431,6 +436,10 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 			},
 			Jobs:        jobsStore,
 			AIProviders: postgres.NewAIProviderStore(pool),
+			Certification: &certification.Service{
+				Store: postgres.NewCertificationStore(pool),
+			},
+			Cost: costStore,
 		}, func() {
 			if enqClose != nil {
 				_ = enqClose()
