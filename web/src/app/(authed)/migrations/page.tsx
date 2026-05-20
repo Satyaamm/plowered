@@ -30,6 +30,7 @@ import {
   Delete20Regular,
   Play20Regular,
 } from "@fluentui/react-icons";
+import { Combobox } from "@fluentui/react-components";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { InfoLabel } from "@/components/info-label";
@@ -39,6 +40,7 @@ import {
   MigrationPlan,
   MigrationRun,
   useConnections,
+  useConnectionScope,
   useCreateMigrationPlan,
   useDeleteMigrationPlan,
   useMigrationPlans,
@@ -299,28 +301,15 @@ function CreatePlanDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </Dropdown>
             </Field>
-            <div className={styles.twoCol}>
-              <Field
-                label={
-                  <InfoLabel info="Optional schema/database the source table lives in. Leave blank if the connection points at a single schema already.">
-                    Schema
-                  </InfoLabel>
-                }
-              >
-                <Input
-                  value={srcSchema}
-                  onChange={(_, d) => setSrcSchema(d.value)}
-                  placeholder="public"
-                />
-              </Field>
-              <Field label="Table" required>
-                <Input
-                  value={srcTable}
-                  onChange={(_, d) => setSrcTable(d.value)}
-                  placeholder="orders"
-                />
-              </Field>
-            </div>
+            <SchemaTablePicker
+              connectionId={srcConn}
+              schema={srcSchema}
+              table={srcTable}
+              onSchema={setSrcSchema}
+              onTable={setSrcTable}
+              schemaPlaceholder="public"
+              tablePlaceholder="orders"
+            />
 
             <Subtitle2>Destination</Subtitle2>
             <Field label="Connection" required>
@@ -337,22 +326,15 @@ function CreatePlanDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </Dropdown>
             </Field>
-            <div className={styles.twoCol}>
-              <Field label="Schema">
-                <Input
-                  value={dstSchema}
-                  onChange={(_, d) => setDstSchema(d.value)}
-                  placeholder="analytics"
-                />
-              </Field>
-              <Field label="Table" required>
-                <Input
-                  value={dstTable}
-                  onChange={(_, d) => setDstTable(d.value)}
-                  placeholder="orders"
-                />
-              </Field>
-            </div>
+            <SchemaTablePicker
+              connectionId={dstConn}
+              schema={dstSchema}
+              table={dstTable}
+              onSchema={setDstSchema}
+              onTable={setDstTable}
+              schemaPlaceholder="analytics"
+              tablePlaceholder="orders"
+            />
 
             <Subtitle2>Columns + run mode</Subtitle2>
             <Field
@@ -439,6 +421,100 @@ function CreatePlanDialog({ onClose }: { onClose: () => void }) {
         </DialogActions>
       </DialogBody>
     </DialogSurface>
+  );
+}
+
+// SchemaTablePicker renders Schema + Table fields backed by the
+// catalog crawl. When the connection has been crawled the dropdowns
+// surface real schemas/tables; an unknown connection or a value the
+// user types that doesn't exist yet still works (freeSolo combobox).
+//
+// Why combobox not dropdown: a tenant might want to migrate INTO a
+// table the catalog hasn't crawled yet (it's about to be created).
+// Free-typing has to keep working.
+function SchemaTablePicker({
+  connectionId,
+  schema,
+  table,
+  onSchema,
+  onTable,
+  schemaPlaceholder,
+  tablePlaceholder,
+}: {
+  connectionId: string;
+  schema: string;
+  table: string;
+  onSchema: (v: string) => void;
+  onTable: (v: string) => void;
+  schemaPlaceholder?: string;
+  tablePlaceholder?: string;
+}) {
+  const styles = useStyles();
+  const scope = useConnectionScope(connectionId);
+
+  const schemas = scope.data?.schemas ?? [];
+  const tables = (scope.data?.tables ?? []).filter(
+    (t) => !schema || t.schema === schema,
+  );
+  const hasScope = schemas.length > 0;
+
+  return (
+    <div className={styles.twoCol}>
+      <Field
+        label={
+          <InfoLabel info="Schema / database the table lives in. Picked from the catalog crawl when the connection has been crawled; type freely otherwise.">
+            Schema
+          </InfoLabel>
+        }
+      >
+        {hasScope ? (
+          <Combobox
+            value={schema}
+            selectedOptions={schema ? [schema] : []}
+            onOptionSelect={(_, d) => onSchema(d.optionValue ?? "")}
+            onInput={(e) => onSchema((e.target as HTMLInputElement).value)}
+            placeholder={schemaPlaceholder ?? "public"}
+            freeform
+          >
+            {schemas.map((s) => (
+              <Option key={s} value={s} text={s}>
+                {s}
+              </Option>
+            ))}
+          </Combobox>
+        ) : (
+          <Input
+            value={schema}
+            onChange={(_, d) => onSchema(d.value)}
+            placeholder={schemaPlaceholder ?? "public"}
+          />
+        )}
+      </Field>
+      <Field label="Table" required>
+        {hasScope ? (
+          <Combobox
+            value={table}
+            selectedOptions={table ? [table] : []}
+            onOptionSelect={(_, d) => onTable(d.optionValue ?? "")}
+            onInput={(e) => onTable((e.target as HTMLInputElement).value)}
+            placeholder={tablePlaceholder ?? "orders"}
+            freeform
+          >
+            {tables.map((t) => (
+              <Option key={`${t.schema}.${t.name}`} value={t.name} text={t.name}>
+                {t.name}
+              </Option>
+            ))}
+          </Combobox>
+        ) : (
+          <Input
+            value={table}
+            onChange={(_, d) => onTable(d.value)}
+            placeholder={tablePlaceholder ?? "orders"}
+          />
+        )}
+      </Field>
+    </div>
   );
 }
 

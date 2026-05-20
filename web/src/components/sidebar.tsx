@@ -23,7 +23,6 @@ import {
   Gavel24Regular,
   Person24Regular,
   Settings24Regular,
-  Search24Regular,
   Alert24Regular,
   Document24Regular,
   Eye24Regular,
@@ -53,10 +52,12 @@ type Group = {
 
 const GROUPS: Group[] = [
   {
+    // Search lives in the topbar (global Input → /search?q=…) so the
+    // sidebar shortcut is duplicative. Removed 2026-05-20 — the topbar
+    // box is always visible and keyboard-discoverable.
     heading: "GENERAL",
     items: [
       { label: "Home",       href: "/",        icon: <Home24Regular />,    tour: "nav-home" },
-      { label: "Search",     href: "/search",  icon: <Search24Regular />,  tour: "nav-search" },
       { label: "Ask",        href: "/ask",     icon: <Sparkle24Regular />, tour: "nav-ask" },
     ],
   },
