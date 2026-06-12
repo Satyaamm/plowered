@@ -134,7 +134,7 @@ export function useTriageFeedback(id: string) {
     mutationFn: (body: TriageFeedbackInput) =>
       call<FeedbackItem>("PATCH", `/v1/feedback/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
-    meta: { successMessage: "Updated" },
+    meta: { successMessage: "Feedback updated" },
   });
 }
 
@@ -143,7 +143,7 @@ export function useDeleteFeedback() {
   return useMutation({
     mutationFn: (id: string) => call<void>("DELETE", `/v1/feedback/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
-    meta: { successMessage: "Deleted" },
+    meta: { successMessage: "Feedback deleted" },
   });
 }
 
@@ -164,5 +164,6 @@ export function useCommentFeedback(id: string) {
     mutationFn: (body: string) =>
       call<FeedbackComment>("POST", `/v1/feedback/${id}/comments`, { body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, "comments", id] }),
+    meta: { successMessage: "Comment posted" },
   });
 }

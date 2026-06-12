@@ -14,9 +14,13 @@ export const TOASTER_ID = "app";
 export interface MutationMeta {
   /** When true, no toast fires for this mutation regardless of outcome. */
   silent?: boolean;
-  /** Override the default success copy. */
+  /** Override the default success title. */
   successMessage?: string;
-  /** Override the default error copy (otherwise we surface error.message). */
+  /** Override the default error title. The error message itself becomes
+   *  the toast body. When unset, the title is derived from the API's
+   *  structured error code (e.g. "forbidden" → "Permission denied"). */
+  errorTitle?: string;
+  /** Override the default error body (otherwise we surface error.message). */
   errorMessage?: string;
 }
 
@@ -48,3 +52,37 @@ export const toast = {
   warn:    (title: string, body?: string) => show("warning", title, body),
   info:    (title: string, body?: string) => show("info",    title, body),
 };
+
+// titleForErrorCode maps the API's structured error codes to a friendly
+// toast title. Unknown codes get a generic fall-through; the error
+// message still lands in the body so the user sees specifics.
+const ERROR_TITLES: Record<string, string> = {
+  validation_failed:   "Check the form",
+  bad_request:         "Check the request",
+  unauthorized:        "Sign in required",
+  forbidden:           "Permission denied",
+  not_found:           "Not found",
+  conflict:            "Conflict",
+  rate_limited:        "Slow down",
+  too_many_requests:   "Slow down",
+  payment_required:    "Quota exceeded",
+  gone:                "Resource gone",
+  unsupported:         "Not supported here",
+  upstream_error:      "Upstream service failed",
+  upstream_unavailable:"Upstream service unavailable",
+  timeout:             "Request timed out",
+  gateway_required:    "Edge auth missing",
+  email_not_verified:  "Verify your email",
+  account_locked:      "Account locked",
+  password_too_weak:   "Password too weak",
+  invalid_credentials: "Wrong email or password",
+  invalid_token:       "Link expired",
+  // Catch-all for our http_<status> auto-codes.
+};
+
+export function deriveErrorTitle(code: string, status: number): string {
+  if (ERROR_TITLES[code]) return ERROR_TITLES[code];
+  if (status >= 500) return "Server error";
+  if (status === 0) return "Network error";
+  return "Action failed";
+}
