@@ -37,6 +37,14 @@ const (
 	// VerbPurge permanently removes a tombstone from the recycle bin.
 	// Only super_admin holds this verb in the default matrix.
 	VerbPurge Verb = "purge"
+
+	// VerbPlatform names operations that cross tenant boundaries — the
+	// operator-of-the-platform's view, not a customer's. Only
+	// platform_admin holds it. Today this gates the cross-tenant
+	// feedback queue + system-wide stats. Use sparingly: every
+	// platform-verb endpoint is an explicit decision to leak data out
+	// of a tenant's blast radius.
+	VerbPlatform Verb = "platform"
 )
 
 // Resource is the thing being acted upon. Plowered uses a small fixed set
@@ -115,20 +123,37 @@ func (e *Engine) Allow(ctx context.Context, p auth.Principal, v Verb, r Resource
 
 // roleAllows codifies the default role → verb matrix.
 //
-//	super_admin → every verb, plus the "purge" verb on tombstones (no
-//	            other role can permanently delete from the recycle bin).
-//	admin       → every verb except VerbPurge.
-//	steward     → read/edit/propose/certify/run.
-//	editor      → read/edit/propose/run.
-//	viewer      → read only.
+//	platform_admin → VerbPlatform + read on every resource. Operator
+//	                 of the platform itself — sees cross-tenant
+//	                 feedback + system stats. Does NOT inherit
+//	                 super_admin's intra-tenant write powers; granting
+//	                 platform_admin to a customer wouldn't let them
+//	                 edit any other customer's data.
+//	super_admin    → every verb, plus the "purge" verb on tombstones (no
+//	                 other role can permanently delete from the recycle bin).
+//	admin          → every verb except VerbPurge and VerbPlatform.
+//	steward        → read/edit/propose/certify/run.
+//	editor         → read/edit/propose/run.
+//	viewer         → read only.
 func roleAllows(p auth.Principal, v Verb, _ Resource) bool {
 	for _, r := range p.Roles {
 		switch r {
+		case "platform_admin":
+			// platform_admin's powers are deliberately narrow: the
+			// platform verb itself, plus read everywhere so a feedback
+			// triager can open the asset / pipeline a bug references
+			// without first asking the tenant to grant access.
+			if v == VerbPlatform || v == VerbRead {
+				return true
+			}
 		case "super_admin":
+			if v == VerbPlatform {
+				continue // super_admin doesn't see other tenants
+			}
 			return true
 		case "admin":
-			if v == VerbPurge {
-				continue // only super_admin gets purge
+			if v == VerbPurge || v == VerbPlatform {
+				continue
 			}
 			return true
 		case "steward":
