@@ -1,35 +1,46 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-// Edge middleware that injects the gateway-auth shared secret on every
-// /api/* request before Next.js rewrites it to the backend.
+// The BFF proxy. Every /api/* request is rewritten server-side to the
+// backend with the gateway-auth header injected — browsers stay on the
+// web origin and never see the secret or the internal API address.
 //
-// Why this lives in middleware and not the route layer:
-//   - rewrites() can't modify request headers; only middleware can.
-//   - Running on the edge means the header is added BEFORE the rewrite
-//     fetch leaves the Next.js process, so the browser never sees it.
-//   - One file, one rule — easy to audit when the security team asks
-//     where the gateway secret is plumbed.
+// Why the REWRITE lives here and not in next.config rewrites():
+//   - With `output: standalone`, next.config rewrites are evaluated at
+//     BUILD time and baked into the routes manifest. A runtime
+//     PLOWERED_API_BASE is silently ignored, which breaks the moment
+//     the build host's env differs from the runtime container's
+//     (exactly what happened in the first VPS deploy — the
+//     destination froze as http://localhost:8080 and every /api/*
+//     call 500'd). Middleware runs per request and reads process.env
+//     at RUNTIME, so the same image works in any environment.
+//   - Header injection has to happen in middleware anyway (config
+//     rewrites can't modify request headers), so doing both here
+//     keeps the entire BFF in one auditable file.
 //
-// The secret comes from PLOWERED_GATEWAY_SECRET on the Next.js
-// container's environment. Rotate by updating the env var on both
-// containers (plowered-web + plowered-api) and restarting them — old
-// browser tabs will get 401s and be forced to log in again, which is
-// the expected behaviour after a secret rotation.
-//
-// When the env var is unset the middleware is a no-op so local dev
-// without nginx still works.
+// Env contract (both read at runtime, on the web container):
+//   PLOWERED_API_BASE       — internal backend origin, e.g.
+//                             http://plowered-api:8080 (compose) or
+//                             http://localhost:8080 (local dev default)
+//   PLOWERED_GATEWAY_SECRET — shared secret the API's GatewayAuthMW
+//                             expects; unset = header not added (local
+//                             dev without nginx still works).
 
 export function middleware(req: NextRequest) {
-  if (!req.nextUrl.pathname.startsWith("/api/")) {
+  const { pathname, search } = req.nextUrl;
+  if (!pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
-  const secret = process.env.PLOWERED_GATEWAY_SECRET;
-  if (!secret) {
-    return NextResponse.next();
-  }
+
+  const apiBase = process.env.PLOWERED_API_BASE ?? "http://localhost:8080";
+  // Strip the /api prefix: /api/v1/auth/me → <base>/v1/auth/me
+  const target = new URL(pathname.slice("/api".length) + search, apiBase);
+
   const headers = new Headers(req.headers);
-  headers.set("X-Gateway-Auth", secret);
-  return NextResponse.next({ request: { headers } });
+  const secret = process.env.PLOWERED_GATEWAY_SECRET;
+  if (secret) {
+    headers.set("X-Gateway-Auth", secret);
+  }
+  return NextResponse.rewrite(target, { request: { headers } });
 }
 
 export const config = {

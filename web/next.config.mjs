@@ -9,17 +9,11 @@ const nextConfig = {
   // boots in well under a second.
   output: "standalone",
 
-  // /api/* is the BFF surface — browsers hit it on the same origin
-  // as the frontend, the Next.js middleware injects the gateway
-  // header server-side, and the rewrite lands on the backend.
-  //
-  // In production this points at the internal docker-compose service
-  // (http://plowered-api:8080); in local dev it defaults to a host
-  // localhost. Setting PLOWERED_API_BASE at runtime is sufficient —
-  // we don't bake the URL into the build.
-  async rewrites() {
-    const apiBase = process.env.PLOWERED_API_BASE ?? "http://localhost:8080";
-    return [{ source: "/api/:path*", destination: `${apiBase}/:path*` }];
-  },
+  // NOTE: the /api/* BFF rewrite deliberately does NOT live here.
+  // With `output: standalone`, next.config rewrites are evaluated at
+  // BUILD time and baked into the routes manifest — a runtime
+  // PLOWERED_API_BASE would be silently ignored. The rewrite (and the
+  // gateway-header injection) live in src/middleware.ts, which reads
+  // env per request at runtime.
 };
 export default nextConfig;
