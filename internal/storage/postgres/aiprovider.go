@@ -21,11 +21,13 @@ func NewAIProviderStore(p *pgxpool.Pool) *AIProviderStore { return &AIProviderSt
 func (s *AIProviderStore) Create(ctx context.Context, c *aiprovider.Config) (*aiprovider.Config, error) {
 	const q = `
 		INSERT INTO ai_provider_configs
-		    (tenant_id, kind, name, model, base_url, secret_urn, capability, is_primary)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		    (tenant_id, kind, name, model, base_url, secret_urn, capability, is_primary,
+		     deployment, api_version, region, project, location)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING id::text, created_at, updated_at`
 	if err := s.pool.QueryRow(ctx, q,
 		c.TenantID, string(c.Kind), c.Name, c.Model, c.BaseURL, c.SecretURN, string(c.Capability), c.IsPrimary,
+		c.Deployment, c.APIVersion, c.Region, c.Project, c.Location,
 	).Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("create ai_provider_config: %w", err)
 	}
@@ -37,7 +39,8 @@ func (s *AIProviderStore) Get(ctx context.Context, tenantID, id string) (*aiprov
 		SELECT id::text, tenant_id, kind, name, model, base_url, secret_urn,
 		       capability, is_primary,
 		       COALESCE(last_tested_at, '0001-01-01 00:00:00+00'::timestamptz),
-		       last_test_ok, last_test_error, created_at, updated_at
+		       last_test_ok, last_test_error, created_at, updated_at,
+		       deployment, api_version, region, project, location
 		  FROM ai_provider_configs
 		 WHERE tenant_id = $1 AND id = $2::uuid`
 	row := s.pool.QueryRow(ctx, q, tenantID, id)
@@ -49,7 +52,8 @@ func (s *AIProviderStore) List(ctx context.Context, tenantID string) ([]*aiprovi
 		SELECT id::text, tenant_id, kind, name, model, base_url, secret_urn,
 		       capability, is_primary,
 		       COALESCE(last_tested_at, '0001-01-01 00:00:00+00'::timestamptz),
-		       last_test_ok, last_test_error, created_at, updated_at
+		       last_test_ok, last_test_error, created_at, updated_at,
+		       deployment, api_version, region, project, location
 		  FROM ai_provider_configs
 		 WHERE tenant_id = $1
 		 ORDER BY created_at DESC`
@@ -73,11 +77,13 @@ func (s *AIProviderStore) Update(ctx context.Context, c *aiprovider.Config) (*ai
 	const q = `
 		UPDATE ai_provider_configs
 		   SET name = $3, model = $4, base_url = $5, capability = $6,
+		       deployment = $7, api_version = $8, region = $9, project = $10, location = $11,
 		       updated_at = now()
 		 WHERE tenant_id = $1 AND id = $2::uuid
 		RETURNING updated_at`
 	if err := s.pool.QueryRow(ctx, q,
 		c.TenantID, c.ID, c.Name, c.Model, c.BaseURL, string(c.Capability),
+		c.Deployment, c.APIVersion, c.Region, c.Project, c.Location,
 	).Scan(&c.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, aiprovider.ErrNotFound
@@ -174,6 +180,7 @@ func scanAIProvider(row rowScanner) (*aiprovider.Config, error) {
 		&capability, &c.IsPrimary,
 		&c.LastTestedAt, &c.LastTestOK, &c.LastTestErr,
 		&c.CreatedAt, &c.UpdatedAt,
+		&c.Deployment, &c.APIVersion, &c.Region, &c.Project, &c.Location,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, aiprovider.ErrNotFound

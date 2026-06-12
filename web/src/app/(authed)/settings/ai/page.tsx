@@ -47,6 +47,7 @@ import {
   useAIProviders,
   useCreateAIProvider,
   useDeleteAIProvider,
+  useRole,
   useSetPrimaryAIProvider,
   useTestInlineAIProvider,
   useTestStoredAIProvider,
@@ -81,9 +82,91 @@ const useStyles = makeStyles({
 const KIND_LABELS: Record<AIProviderKind, string> = {
   anthropic: "Anthropic (Claude)",
   openai: "OpenAI (GPT)",
+  gemini: "Google Gemini",
+  "azure-openai": "Azure OpenAI",
+  bedrock: "AWS Bedrock",
+  vertex: "GCP Vertex AI",
+  cohere: "Cohere",
+  voyage: "Voyage AI (embeddings)",
+  mistral: "Mistral AI",
+  groq: "Groq",
+  together: "Together AI",
+  fireworks: "Fireworks AI",
+  perplexity: "Perplexity",
+  xai: "xAI (Grok)",
   deepseek: "DeepSeek",
+  ollama: "Ollama (self-hosted)",
   "openai-compatible": "Custom (OpenAI-compatible)",
 };
+
+// requiredFields drives the wizard — which extra inputs to show beyond
+// the universal {name, model, api_key, capability} set. Kept here so
+// adding a new kind only requires touching this map + KIND_LABELS +
+// SUGGESTED_MODELS, not the form JSX.
+type FieldKey =
+  | "api_key"
+  | "base_url"
+  | "deployment"
+  | "api_version"
+  | "region"
+  | "project"
+  | "location";
+
+const KIND_FIELDS: Record<AIProviderKind, FieldKey[]> = {
+  anthropic:         ["api_key"],
+  openai:            ["api_key"],
+  gemini:            ["api_key"],
+  cohere:            ["api_key"],
+  voyage:            ["api_key"],
+  mistral:           ["api_key"],
+  groq:              ["api_key"],
+  together:          ["api_key"],
+  fireworks:         ["api_key"],
+  perplexity:        ["api_key"],
+  xai:               ["api_key"],
+  deepseek:          ["api_key"],
+  ollama:            ["base_url"],
+  "openai-compatible": ["base_url", "api_key"],
+  "azure-openai":    ["base_url", "deployment", "api_version", "api_key"],
+  bedrock:           ["region", "api_key"],
+  vertex:            ["project", "location", "api_key"],
+};
+
+// FIELD_LABELS + FIELD_PLACEHOLDERS drive how each per-kind input
+// renders. The api_key field's label changes per kind to match what the
+// provider calls it ("Service account JSON" for Vertex etc.).
+const FIELD_LABELS: Record<FieldKey, string> = {
+  api_key:     "API key",
+  base_url:    "Base URL",
+  deployment:  "Deployment name",
+  api_version: "API version",
+  region:      "AWS region",
+  project:     "GCP project ID",
+  location:    "GCP location",
+};
+
+const FIELD_PLACEHOLDERS: Record<FieldKey, string> = {
+  api_key:     "paste-your-key-here",
+  base_url:    "https://your-host.example.com",
+  deployment:  "my-gpt4o-deployment",
+  api_version: "2024-06-01",
+  region:      "us-east-1",
+  project:     "my-gcp-project",
+  location:    "us-central1",
+};
+
+function apiKeyLabelFor(kind: AIProviderKind): string {
+  if (kind === "vertex") return "Service account JSON (optional — defaults to ADC)";
+  if (kind === "bedrock") return "AWS creds JSON (optional — defaults to IAM role)";
+  if (kind === "ollama") return "API key (Ollama usually has none)";
+  return "API key";
+}
+
+function apiKeyPlaceholderFor(kind: AIProviderKind): string {
+  if (kind === "vertex") return '{"type":"service_account",...}';
+  if (kind === "bedrock") return '{"access_key_id":"AKIA...","secret_access_key":"..."}';
+  return "paste-your-key-here";
+}
 
 export default function AIProvidersPage() {
   const styles = useStyles();
@@ -91,6 +174,8 @@ export default function AIProvidersPage() {
   const del = useDeleteAIProvider();
   const setPrimary = useSetPrimaryAIProvider();
   const testStored = useTestStoredAIProvider();
+  const { can } = useRole();
+  const canAdmin = can("admin");
   const [open, setOpen] = useState(false);
 
   return (
@@ -100,14 +185,16 @@ export default function AIProvidersPage() {
         title="AI providers"
         subtitle="Bring your own Claude, OpenAI, DeepSeek or any OpenAI-compatible endpoint. Keys are stored encrypted in the secrets vault."
         actions={
-          <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
-            <DialogTrigger disableButtonEnhancement>
-              <Button appearance="primary" icon={<Add20Regular />}>
-                Add provider
-              </Button>
-            </DialogTrigger>
-            <AddProviderDialog onClose={() => setOpen(false)} />
-          </Dialog>
+          canAdmin && (
+            <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
+              <DialogTrigger disableButtonEnhancement>
+                <Button appearance="primary" icon={<Add20Regular />}>
+                  Add provider
+                </Button>
+              </DialogTrigger>
+              <AddProviderDialog onClose={() => setOpen(false)} />
+            </Dialog>
+          )
         }
       />
 
@@ -226,27 +313,49 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
   const [model, setModel] = useState("");
   const [baseURL, setBaseURL] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [deployment, setDeployment] = useState("");
+  const [apiVersion, setApiVersion] = useState("");
+  const [region, setRegion] = useState("");
+  const [project, setProject] = useState("");
+  const [location, setLocation] = useState("");
   const [capability, setCapability] = useState<AICapability>("chat");
   const [isPrimary, setIsPrimary] = useState(false);
   const [tested, setTested] = useState<null | { ok: boolean; error?: string }>(
     null,
   );
 
+  const fields = KIND_FIELDS[kind];
+  const has = (k: FieldKey) => fields.includes(k);
+
   const payload = (): AIProviderInput => ({
     kind,
     name,
     model,
-    base_url: baseURL || undefined,
-    api_key: apiKey,
+    base_url: has("base_url") && baseURL ? baseURL : undefined,
+    api_key: apiKey || undefined,
+    deployment: has("deployment") && deployment ? deployment : undefined,
+    api_version: has("api_version") && apiVersion ? apiVersion : undefined,
+    region: has("region") && region ? region : undefined,
+    project: has("project") && project ? project : undefined,
+    location: has("location") && location ? location : undefined,
     capability,
     is_primary: isPrimary,
   });
 
+  // Per-kind validation. Bedrock + Vertex allow empty api_key (default
+  // credential chain on the host); Ollama does too. Everyone else
+  // requires a key.
+  const apiKeyRequired = kind !== "bedrock" && kind !== "vertex" && kind !== "ollama";
   const canTest =
-    name.trim() &&
-    model.trim() &&
-    apiKey.trim() &&
-    (kind !== "openai-compatible" || baseURL.trim());
+    name.trim() !== "" &&
+    model.trim() !== "" &&
+    (!apiKeyRequired || apiKey.trim() !== "") &&
+    (!has("base_url") || baseURL.trim() !== "") &&
+    (!has("deployment") || deployment.trim() !== "") &&
+    (!has("api_version") || apiVersion.trim() !== "") &&
+    (!has("region") || region.trim() !== "") &&
+    (!has("project") || project.trim() !== "") &&
+    (!has("location") || location.trim() !== "");
 
   const canSave = canTest && tested?.ok === true;
 
@@ -289,16 +398,17 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
                   setKind(d.optionValue as AIProviderKind);
                   setTested(null);
                   setModel("");
+                  // Wipe per-kind state so a half-filled Azure form
+                  // doesn't survive a switch to plain OpenAI.
+                  setBaseURL("");
+                  setDeployment("");
+                  setApiVersion("");
+                  setRegion("");
+                  setProject("");
+                  setLocation("");
                 }}
               >
-                {(
-                  [
-                    "anthropic",
-                    "openai",
-                    "deepseek",
-                    "openai-compatible",
-                  ] as AIProviderKind[]
-                ).map((k) => (
+                {(Object.keys(KIND_LABELS) as AIProviderKind[]).map((k) => (
                   <Option key={k} value={k} text={KIND_LABELS[k]}>
                     {KIND_LABELS[k]}
                   </Option>
@@ -374,53 +484,133 @@ function AddProviderDialog({ onClose }: { onClose: () => void }) {
               </Field>
             </div>
 
-            <Field
-              label={
-                <InfoLabel
-                  info={
-                    kind === "openai-compatible"
-                      ? "Required for OpenAI-compatible gateways. Point at any /v1-style endpoint — LiteLLM, Ollama, OpenRouter, vLLM, etc. Include the protocol and port; no trailing slash."
-                      : "Optional. Leave blank to use the official provider host. Set to a proxy URL (e.g. AWS Bedrock, Azure OpenAI passthrough) if your network egress is restricted."
-                  }
-                >
-                  Base URL
-                </InfoLabel>
-              }
-              required={kind === "openai-compatible"}
-            >
-              <Input
-                placeholder={
-                  kind === "anthropic"
-                    ? "https://api.anthropic.com"
-                    : kind === "deepseek"
-                      ? "https://api.deepseek.com"
-                      : "https://api.openai.com"
+            {/* Per-kind fields driven by KIND_FIELDS so the form only
+                renders inputs that the selected provider actually
+                consumes. Order matters: connection-shape fields first
+                (base_url, deployment, etc.), credentials last so the
+                user reads the form top-to-bottom. */}
+            {has("base_url") && (
+              <Field
+                label={
+                  <InfoLabel info="Required by this provider. Point at the API endpoint — for Azure OpenAI it's https://<resource>.openai.azure.com; for Ollama it's the local /v1 endpoint; for openai-compatible gateways (LiteLLM, OpenRouter, vLLM) any /v1-style URL.">
+                    {FIELD_LABELS.base_url}
+                  </InfoLabel>
                 }
-                value={baseURL}
-                onChange={(_, d) => {
-                  setBaseURL(d.value);
-                  setTested(null);
-                }}
-              />
-            </Field>
+                required
+              >
+                <Input
+                  placeholder={FIELD_PLACEHOLDERS.base_url}
+                  value={baseURL}
+                  onChange={(_, d) => { setBaseURL(d.value); setTested(null); }}
+                />
+              </Field>
+            )}
 
-            <Field
-              label={
-                <InfoLabel info="Stored encrypted at rest (AES-256-GCM) in the secrets vault. Never returned through the API after save — to rotate, delete and re-create the provider.">
-                  API key
-                </InfoLabel>
-              }
-              required
-            >
-              <Input
-                type="password"
-                value={apiKey}
-                onChange={(_, d) => {
-                  setApiKey(d.value);
-                  setTested(null);
-                }}
-              />
-            </Field>
+            {has("deployment") && (
+              <Field
+                label={
+                  <InfoLabel info="Azure OpenAI routes requests to a specific deployment of an underlying OpenAI model. The deployment name is what you chose in the Azure portal — it's NOT the model id (e.g. 'my-gpt4o-prod', not 'gpt-4o').">
+                    {FIELD_LABELS.deployment}
+                  </InfoLabel>
+                }
+                required
+              >
+                <Input
+                  placeholder={FIELD_PLACEHOLDERS.deployment}
+                  value={deployment}
+                  onChange={(_, d) => { setDeployment(d.value); setTested(null); }}
+                />
+              </Field>
+            )}
+
+            {has("api_version") && (
+              <Field
+                label={
+                  <InfoLabel info="Azure OpenAI pins behaviour to a specific API version. Use the latest GA value from Microsoft's reference docs unless you're locked to a preview feature.">
+                    {FIELD_LABELS.api_version}
+                  </InfoLabel>
+                }
+                required
+              >
+                <Input
+                  placeholder={FIELD_PLACEHOLDERS.api_version}
+                  value={apiVersion}
+                  onChange={(_, d) => { setApiVersion(d.value); setTested(null); }}
+                />
+              </Field>
+            )}
+
+            {has("region") && (
+              <Field
+                label={
+                  <InfoLabel info="AWS region the Bedrock model is enabled in. Model availability varies by region — check the Bedrock console under 'Model access' before saving.">
+                    {FIELD_LABELS.region}
+                  </InfoLabel>
+                }
+                required
+              >
+                <Input
+                  placeholder={FIELD_PLACEHOLDERS.region}
+                  value={region}
+                  onChange={(_, d) => { setRegion(d.value); setTested(null); }}
+                />
+              </Field>
+            )}
+
+            {(has("project") || has("location")) && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                {has("project") && (
+                  <Field
+                    label={
+                      <InfoLabel info="GCP project ID hosting the Vertex AI workload. Not the project NUMBER — the lowercase string ID (e.g. 'my-data-prod-12345').">
+                        {FIELD_LABELS.project}
+                      </InfoLabel>
+                    }
+                    required
+                  >
+                    <Input
+                      placeholder={FIELD_PLACEHOLDERS.project}
+                      value={project}
+                      onChange={(_, d) => { setProject(d.value); setTested(null); }}
+                    />
+                  </Field>
+                )}
+                {has("location") && (
+                  <Field
+                    label={
+                      <InfoLabel info="GCP region the model is served from. Vertex availability differs by region — Gemini in us-central1, Claude on Vertex in us-east5, etc.">
+                        {FIELD_LABELS.location}
+                      </InfoLabel>
+                    }
+                    required
+                  >
+                    <Input
+                      placeholder={FIELD_PLACEHOLDERS.location}
+                      value={location}
+                      onChange={(_, d) => { setLocation(d.value); setTested(null); }}
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
+
+            {has("api_key") && (
+              <Field
+                label={
+                  <InfoLabel info="Stored encrypted at rest (AES-256-GCM) in the secrets vault. Never returned through the API after save — to rotate, delete and re-create the provider. Bedrock / Vertex / Ollama accept an empty value to defer to the host's default credential chain.">
+                    {apiKeyLabelFor(kind)}
+                  </InfoLabel>
+                }
+                required={apiKeyRequired}
+              >
+                <Input
+                  type="password"
+                  placeholder={apiKeyPlaceholderFor(kind)}
+                  value={apiKey}
+                  onChange={(_, d) => { setApiKey(d.value); setTested(null); }}
+                />
+              </Field>
+            )}
 
             <Switch
               label="Make this the tenant default for its capability"

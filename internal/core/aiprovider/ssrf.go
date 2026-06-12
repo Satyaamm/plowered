@@ -36,15 +36,19 @@ import (
 // resolves to a forbidden IP. The HTTP layer translates it to a 400.
 var ErrBlockedHost = errors.New("aiprovider: upstream host is on the blocklist (private / loopback / metadata)")
 
-// allowPrivateHosts mirrors the env var. Read once at process start —
-// flipping it mid-flight isn't a use case worth supporting.
-var allowPrivateHosts = os.Getenv("PLOWERED_ALLOW_PRIVATE_AI_HOSTS") == "1"
+// allowPrivateHosts checks the env var on each call. Read-on-call
+// (instead of caching at init) so tests can flip it via t.Setenv
+// without restarting the process. The cost is one env lookup per
+// outbound URL — negligible compared to the network call.
+func allowPrivateHosts() bool {
+	return os.Getenv("PLOWERED_ALLOW_PRIVATE_AI_HOSTS") == "1"
+}
 
 // ValidateBaseURL parses raw, resolves its host, and checks every
 // returned IP. Returns ErrBlockedHost if any IP is forbidden. Used by
 // the create/update HTTP handler so a bad config never lands in the DB.
 func ValidateBaseURL(ctx context.Context, raw string) error {
-	if allowPrivateHosts {
+	if allowPrivateHosts() {
 		return nil
 	}
 	u, err := url.Parse(strings.TrimSpace(raw))
@@ -115,7 +119,7 @@ func forbidden(addr netip.Addr) bool {
 // up-front ValidateBaseURL check by returning a public IP first then a
 // private IP a second later.
 func SafeHTTPClient(timeout time.Duration) *http.Client {
-	if allowPrivateHosts {
+	if allowPrivateHosts() {
 		return &http.Client{Timeout: timeout}
 	}
 	dialer := &net.Dialer{Timeout: 5 * time.Second}

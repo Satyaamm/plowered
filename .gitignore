@@ -61,3 +61,11 @@ coverage.html
 # Docker
 .docker/
 .secrets/
+
+# Production env (template is committed; real values stay local)
+.env.production
+
+# Playwright demo run artifacts
+web/demo-output/
+web/test-results/
+web/playwright-report/

@@ -30,18 +30,45 @@ import (
 type Kind string
 
 const (
+	// First-party REST providers — each has its own wire format and adapter.
 	KindAnthropic Kind = "anthropic"
 	KindOpenAI    Kind = "openai"
-	KindDeepSeek  Kind = "deepseek"
-	// KindCustom is for OpenAI-compatible endpoints (Ollama, LiteLLM,
-	// OpenRouter, vLLM, etc.). The adapter reuses the OpenAI wire
-	// format and lets BaseURL override the API host.
+	KindGemini    Kind = "gemini"        // Google AI Studio (api key)
+	KindAzureOAI  Kind = "azure-openai"  // Azure-hosted OpenAI (deployment + api-version)
+	KindCohere    Kind = "cohere"        // chat + embed + rerank
+	KindVoyage    Kind = "voyage"        // embed-only
+	KindBedrock   Kind = "bedrock"       // AWS Bedrock (IAM/SigV4)
+	KindVertex    Kind = "vertex"        // GCP Vertex AI (service account / WIF)
+
+	// OpenAI-compatible providers — reuse the openaiProvider adapter
+	// with a per-kind default base URL. Promoting them to named kinds
+	// gets us per-provider analytics + a saner UI than "type a URL."
+	KindDeepSeek    Kind = "deepseek"
+	KindMistral     Kind = "mistral"
+	KindGroq        Kind = "groq"
+	KindTogether    Kind = "together"
+	KindFireworks   Kind = "fireworks"
+	KindPerplexity  Kind = "perplexity"
+	KindXAI         Kind = "xai"
+	KindOllama      Kind = "ollama"
+
+	// KindCustom is the catch-all for any other OpenAI-compatible
+	// endpoint (LiteLLM, OpenRouter, vLLM, your own gateway). Requires
+	// BaseURL to be set; the adapter reuses the OpenAI wire format.
 	KindCustom Kind = "openai-compatible"
 )
 
 // AllKinds is the ordered list the settings UI offers in its dropdown.
-// Order = "most common first."
-var AllKinds = []Kind{KindAnthropic, KindOpenAI, KindDeepSeek, KindCustom}
+// Order = "common frontier first, then cloud-platform, then specialised,
+// then long-tail OpenAI-compatible, then catch-all."
+var AllKinds = []Kind{
+	KindAnthropic, KindOpenAI, KindGemini,
+	KindAzureOAI, KindBedrock, KindVertex,
+	KindCohere, KindVoyage, KindMistral,
+	KindGroq, KindTogether, KindFireworks,
+	KindPerplexity, KindXAI, KindDeepSeek,
+	KindOllama, KindCustom,
+}
 
 // Capability bits surface to the UI so users see at a glance whether a
 // config can serve chat or embeddings (or both).
@@ -66,21 +93,50 @@ const (
 // Config is one provider entry on a tenant's BYOM list. The API key
 // itself is never stored on this row — only the SecretURN that points
 // into the vault.
+//
+// Per-kind notes for the optional fields below:
+//
+//	KindAzureOAI : BaseURL = "https://<resource>.openai.azure.com",
+//	               Deployment = the deployment name in your resource,
+//	               APIVersion = e.g. "2024-06-01". Auth header is api-key.
+//	KindBedrock  : Region required (e.g. "us-east-1"). Auth is AWS SigV4
+//	               via the standard credential chain (env, ~/.aws,
+//	               instance profile, IRSA). SecretURN may carry a JSON
+//	               blob {access_key_id, secret_access_key, session_token}
+//	               for explicit static creds.
+//	KindVertex   : Project + Location required (e.g. "us-central1").
+//	               SecretURN points at a service-account JSON blob; auth
+//	               uses the google.Credentials default chain otherwise.
+//	KindOllama   : BaseURL defaults to http://localhost:11434/v1 — set
+//	               PLOWERED_ALLOW_PRIVATE_AI_HOSTS=1 to bypass the SSRF
+//	               guard for local dev.
 type Config struct {
 	ID         string
 	TenantID   string
 	Kind       Kind
 	Name       string  // user-facing nickname, e.g. "Claude Sonnet 4.6"
 	Model      string  // provider-specific model id
-	BaseURL    string  // optional; required for KindCustom
-	SecretURN  string  // vault key for the API key bytes
+	BaseURL    string  // optional; required for KindCustom + KindAzureOAI + KindOllama
+	SecretURN  string  // vault key for the API key bytes (or AWS creds JSON, GCP SA JSON)
 	IsPrimary  bool    // marked as the tenant default for its capability
 	Capability Capability
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+
+	// Azure OpenAI specific.
+	Deployment string // resource deployment name
+	APIVersion string // e.g. "2024-06-01"
+
+	// AWS Bedrock specific.
+	Region string // e.g. "us-east-1"
+
+	// GCP Vertex AI specific.
+	Project  string // GCP project ID
+	Location string // e.g. "us-central1"
+
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 	LastTestedAt time.Time
-	LastTestOK  bool
-	LastTestErr string
+	LastTestOK   bool
+	LastTestErr  string
 }
 
 // Redacted is the wire form the API returns. It strips anything
@@ -94,6 +150,11 @@ type Redacted struct {
 	BaseURL      string     `json:"base_url,omitempty"`
 	IsPrimary    bool       `json:"is_primary"`
 	Capability   Capability `json:"capability"`
+	Deployment   string     `json:"deployment,omitempty"`
+	APIVersion   string     `json:"api_version,omitempty"`
+	Region       string     `json:"region,omitempty"`
+	Project      string     `json:"project,omitempty"`
+	Location     string     `json:"location,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 	LastTestedAt *time.Time `json:"last_tested_at,omitempty"`
@@ -110,6 +171,11 @@ func (c *Config) Redact() Redacted {
 		BaseURL:     c.BaseURL,
 		IsPrimary:   c.IsPrimary,
 		Capability:  c.Capability,
+		Deployment:  c.Deployment,
+		APIVersion:  c.APIVersion,
+		Region:      c.Region,
+		Project:     c.Project,
+		Location:    c.Location,
 		CreatedAt:   c.CreatedAt,
 		UpdatedAt:   c.UpdatedAt,
 		LastTestOK:  c.LastTestOK,

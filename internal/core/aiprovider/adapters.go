@@ -32,19 +32,103 @@ func Build(cfg *Config, apiKey []byte) (llm.Provider, error) {
 	client := SafeHTTPClient(60 * time.Second)
 	switch cfg.Kind {
 	case KindAnthropic:
-		return &anthropicProvider{baseURL: pick(cfg.BaseURL, "https://api.anthropic.com"), model: cfg.Model, apiKey: string(apiKey), client: client}, nil
-	case KindOpenAI:
-		return &openaiProvider{baseURL: pick(cfg.BaseURL, "https://api.openai.com"), model: cfg.Model, apiKey: string(apiKey), name: "openai:" + cfg.Model, client: client}, nil
-	case KindDeepSeek:
-		return &openaiProvider{baseURL: pick(cfg.BaseURL, "https://api.deepseek.com"), model: cfg.Model, apiKey: string(apiKey), name: "deepseek:" + cfg.Model, client: client}, nil
+		return &anthropicProvider{
+			baseURL: pick(cfg.BaseURL, "https://api.anthropic.com"),
+			model:   cfg.Model,
+			apiKey:  string(apiKey),
+			client:  client,
+		}, nil
+	case KindGemini:
+		return &geminiProvider{
+			baseURL: pick(cfg.BaseURL, "https://generativelanguage.googleapis.com"),
+			model:   cfg.Model,
+			apiKey:  string(apiKey),
+			client:  client,
+		}, nil
+	case KindAzureOAI:
+		if cfg.BaseURL == "" {
+			return nil, errors.New("aiprovider: azure-openai requires base_url (e.g. https://<resource>.openai.azure.com)")
+		}
+		if cfg.Deployment == "" || cfg.APIVersion == "" {
+			return nil, errors.New("aiprovider: azure-openai requires deployment + api_version")
+		}
+		return &azureOAIProvider{
+			baseURL:    strings.TrimRight(cfg.BaseURL, "/"),
+			deployment: cfg.Deployment,
+			apiVersion: cfg.APIVersion,
+			model:      cfg.Model,
+			apiKey:     string(apiKey),
+			client:     client,
+		}, nil
+	case KindCohere:
+		return &cohereProvider{
+			baseURL: pick(cfg.BaseURL, "https://api.cohere.ai"),
+			model:   cfg.Model,
+			apiKey:  string(apiKey),
+			client:  client,
+		}, nil
+	case KindVoyage:
+		return &voyageProvider{
+			baseURL: pick(cfg.BaseURL, "https://api.voyageai.com"),
+			model:   cfg.Model,
+			apiKey:  string(apiKey),
+			client:  client,
+		}, nil
+	case KindBedrock:
+		return newBedrockProvider(cfg, apiKey)
+	case KindVertex:
+		return newVertexProvider(cfg, apiKey)
+	case KindOpenAI, KindDeepSeek, KindMistral, KindGroq, KindTogether,
+		KindFireworks, KindPerplexity, KindXAI, KindOllama:
+		base := pick(cfg.BaseURL, OpenAICompatibleDefaultBaseURL(cfg.Kind))
+		return &openaiProvider{
+			baseURL: base,
+			model:   cfg.Model,
+			apiKey:  string(apiKey),
+			name:    string(cfg.Kind) + ":" + cfg.Model,
+			client:  client,
+		}, nil
 	case KindCustom:
 		if cfg.BaseURL == "" {
-			return nil, errors.New("aiprovider: custom provider requires base_url")
+			return nil, errors.New("aiprovider: openai-compatible provider requires base_url")
 		}
-		return &openaiProvider{baseURL: cfg.BaseURL, model: cfg.Model, apiKey: string(apiKey), name: "custom:" + cfg.Model, client: client}, nil
+		return &openaiProvider{
+			baseURL: cfg.BaseURL,
+			model:   cfg.Model,
+			apiKey:  string(apiKey),
+			name:    "custom:" + cfg.Model,
+			client:  client,
+		}, nil
 	default:
 		return nil, fmt.Errorf("aiprovider: unknown kind %q", cfg.Kind)
 	}
+}
+
+// OpenAICompatibleDefaultBaseURL returns the default API base for one of
+// the named OpenAI-compatible providers. Keeping the mapping in one
+// place stops adapters from drifting if a provider changes its host.
+func OpenAICompatibleDefaultBaseURL(k Kind) string {
+	switch k {
+	case KindOpenAI:
+		return "https://api.openai.com"
+	case KindDeepSeek:
+		return "https://api.deepseek.com"
+	case KindMistral:
+		return "https://api.mistral.ai"
+	case KindGroq:
+		return "https://api.groq.com/openai"
+	case KindTogether:
+		return "https://api.together.xyz"
+	case KindFireworks:
+		return "https://api.fireworks.ai/inference"
+	case KindPerplexity:
+		return "https://api.perplexity.ai"
+	case KindXAI:
+		return "https://api.x.ai"
+	case KindOllama:
+		return "http://localhost:11434/v1"
+	}
+	return ""
 }
 
 // Test runs a cheap credential probe against the provider so the
@@ -69,10 +153,24 @@ func Test(ctx context.Context, cfg *Config, apiKey []byte) error {
 	switch cfg.Kind {
 	case KindAnthropic:
 		return testAnthropic(tctx, pick(cfg.BaseURL, "https://api.anthropic.com"), string(apiKey))
-	case KindOpenAI:
-		return testOpenAI(tctx, pick(cfg.BaseURL, "https://api.openai.com"), string(apiKey))
-	case KindDeepSeek:
-		return testOpenAI(tctx, pick(cfg.BaseURL, "https://api.deepseek.com"), string(apiKey))
+	case KindGemini:
+		return testGemini(tctx, pick(cfg.BaseURL, "https://generativelanguage.googleapis.com"), string(apiKey))
+	case KindAzureOAI:
+		if cfg.BaseURL == "" || cfg.Deployment == "" || cfg.APIVersion == "" {
+			return errors.New("aiprovider: azure-openai requires base_url + deployment + api_version")
+		}
+		return testAzureOAI(tctx, cfg, string(apiKey))
+	case KindCohere:
+		return testCohere(tctx, pick(cfg.BaseURL, "https://api.cohere.ai"), string(apiKey))
+	case KindVoyage:
+		return testVoyage(tctx, pick(cfg.BaseURL, "https://api.voyageai.com"), string(apiKey))
+	case KindBedrock:
+		return testBedrock(tctx, cfg, apiKey)
+	case KindVertex:
+		return testVertex(tctx, cfg, apiKey)
+	case KindOpenAI, KindDeepSeek, KindMistral, KindGroq, KindTogether,
+		KindFireworks, KindPerplexity, KindXAI, KindOllama:
+		return testOpenAI(tctx, pick(cfg.BaseURL, OpenAICompatibleDefaultBaseURL(cfg.Kind)), string(apiKey))
 	case KindCustom:
 		if cfg.BaseURL == "" {
 			return errors.New("aiprovider: custom provider requires base_url")

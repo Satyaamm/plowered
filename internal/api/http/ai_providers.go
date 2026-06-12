@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/core/secrets"
 )
 
@@ -25,14 +26,14 @@ import (
 //
 // The api_key field is write-only. List responses use the Redacted shape
 // which never carries the URN or any cached key material.
-func aiProviderHandlers(mux *http.ServeMux, repo aiprovider.Repo, vault secrets.Vault) {
-	mux.HandleFunc("GET /v1/ai/providers", listAIProvidersHandler(repo))
-	mux.HandleFunc("POST /v1/ai/providers", createAIProviderHandler(repo, vault))
-	mux.HandleFunc("PATCH /v1/ai/providers/{id}", updateAIProviderHandler(repo, vault))
-	mux.HandleFunc("DELETE /v1/ai/providers/{id}", deleteAIProviderHandler(repo, vault))
-	mux.HandleFunc("POST /v1/ai/providers/{id}/test", testStoredAIProviderHandler(repo, vault))
-	mux.HandleFunc("POST /v1/ai/providers/{id}/primary", primaryAIProviderHandler(repo))
-	mux.HandleFunc("POST /v1/ai/providers:test", testInlineAIProviderHandler())
+func aiProviderHandlers(mux *http.ServeMux, repo aiprovider.Repo, vault secrets.Vault, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/ai/providers", listAIProvidersHandler(repo, authz))
+	mux.HandleFunc("POST /v1/ai/providers", createAIProviderHandler(repo, vault, authz))
+	mux.HandleFunc("PATCH /v1/ai/providers/{id}", updateAIProviderHandler(repo, vault, authz))
+	mux.HandleFunc("DELETE /v1/ai/providers/{id}", deleteAIProviderHandler(repo, vault, authz))
+	mux.HandleFunc("POST /v1/ai/providers/{id}/test", testStoredAIProviderHandler(repo, vault, authz))
+	mux.HandleFunc("POST /v1/ai/providers/{id}/primary", primaryAIProviderHandler(repo, authz))
+	mux.HandleFunc("POST /v1/ai/providers:test", testInlineAIProviderHandler(authz))
 }
 
 type aiProviderReq struct {
@@ -43,6 +44,23 @@ type aiProviderReq struct {
 	APIKey     string `json:"api_key,omitempty"`
 	Capability string `json:"capability"`
 	IsPrimary  bool   `json:"is_primary,omitempty"`
+
+	// Per-kind auth context. Each field is consumed only when the chosen
+	// Kind needs it; the validator below enforces the right combo.
+	Deployment string `json:"deployment,omitempty"`  // azure-openai
+	APIVersion string `json:"api_version,omitempty"` // azure-openai
+	Region     string `json:"region,omitempty"`      // bedrock
+	Project    string `json:"project,omitempty"`     // vertex
+	Location   string `json:"location,omitempty"`    // vertex
+}
+
+// keyOptionalKinds may be saved without an api_key — the backend driver
+// falls back to the host's default credential chain (IAM role for AWS,
+// ADC for GCP, local default for Ollama).
+var keyOptionalKinds = map[aiprovider.Kind]bool{
+	aiprovider.KindBedrock: true,
+	aiprovider.KindVertex:  true,
+	aiprovider.KindOllama:  true,
 }
 
 func (r aiProviderReq) validate(ctx context.Context, requireKey bool) error {
@@ -53,15 +71,38 @@ func (r aiProviderReq) validate(ctx context.Context, requireKey bool) error {
 		return errors.New("model is required")
 	}
 	if !isKnownKind(r.Kind) {
-		return errors.New("kind must be one of: anthropic, openai, deepseek, openai-compatible")
+		return errors.New("kind not recognised; see AllKinds in internal/core/aiprovider")
 	}
-	if r.Kind == string(aiprovider.KindCustom) && r.BaseURL == "" {
+	kind := aiprovider.Kind(r.Kind)
+	if kind == aiprovider.KindCustom && r.BaseURL == "" {
 		return errors.New("base_url is required for openai-compatible providers")
+	}
+	if kind == aiprovider.KindAzureOAI {
+		if r.BaseURL == "" {
+			return errors.New("azure-openai requires base_url (your resource URL)")
+		}
+		if r.Deployment == "" {
+			return errors.New("azure-openai requires deployment name")
+		}
+		if r.APIVersion == "" {
+			return errors.New("azure-openai requires api_version")
+		}
+	}
+	if kind == aiprovider.KindBedrock && r.Region == "" {
+		return errors.New("bedrock requires region")
+	}
+	if kind == aiprovider.KindVertex {
+		if r.Project == "" {
+			return errors.New("vertex requires project")
+		}
+		if r.Location == "" {
+			return errors.New("vertex requires location")
+		}
 	}
 	if !isKnownCapability(r.Capability) {
 		return errors.New("capability must be either 'chat' or 'embed'")
 	}
-	if requireKey && r.APIKey == "" {
+	if requireKey && r.APIKey == "" && !keyOptionalKinds[kind] {
 		return errors.New("api_key is required")
 	}
 	// SSRF guard: reject base_urls that resolve to private / loopback /
@@ -88,9 +129,9 @@ func isKnownCapability(c string) bool {
 	return c == string(aiprovider.CapChat) || c == string(aiprovider.CapEmbed)
 }
 
-func listAIProvidersHandler(repo aiprovider.Repo) http.HandlerFunc {
+func listAIProvidersHandler(repo aiprovider.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "ai_provider")
 		if tenant == "" {
 			return
 		}
@@ -107,9 +148,9 @@ func listAIProvidersHandler(repo aiprovider.Repo) http.HandlerFunc {
 	}
 }
 
-func createAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.HandlerFunc {
+func createAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "ai_provider")
 		if tenant == "" {
 			return
 		}
@@ -132,6 +173,11 @@ func createAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.Han
 			Name:       req.Name,
 			Model:      req.Model,
 			BaseURL:    req.BaseURL,
+			Deployment: req.Deployment,
+			APIVersion: req.APIVersion,
+			Region:     req.Region,
+			Project:    req.Project,
+			Location:   req.Location,
 			Capability: aiprovider.Capability(req.Capability),
 			IsPrimary:  req.IsPrimary,
 		}
@@ -180,9 +226,9 @@ func setSecretURN(ctx context.Context, repo aiprovider.Repo, tenantID, id, urn s
 	return nil
 }
 
-func updateAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.HandlerFunc {
+func updateAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "ai_provider")
 		if tenant == "" {
 			return
 		}
@@ -205,6 +251,11 @@ func updateAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.Han
 		existing.Name = req.Name
 		existing.Model = req.Model
 		existing.BaseURL = req.BaseURL
+		existing.Deployment = req.Deployment
+		existing.APIVersion = req.APIVersion
+		existing.Region = req.Region
+		existing.Project = req.Project
+		existing.Location = req.Location
 		existing.Capability = aiprovider.Capability(req.Capability)
 		updated, err := repo.Update(r.Context(), existing)
 		if err != nil {
@@ -229,9 +280,9 @@ func updateAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.Han
 	}
 }
 
-func deleteAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.HandlerFunc {
+func deleteAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "ai_provider")
 		if tenant == "" {
 			return
 		}
@@ -252,9 +303,9 @@ func deleteAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.Han
 	}
 }
 
-func testStoredAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http.HandlerFunc {
+func testStoredAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "ai_provider")
 		if tenant == "" {
 			return
 		}
@@ -291,9 +342,9 @@ func testStoredAIProviderHandler(repo aiprovider.Repo, vault secrets.Vault) http
 	}
 }
 
-func primaryAIProviderHandler(repo aiprovider.Repo) http.HandlerFunc {
+func primaryAIProviderHandler(repo aiprovider.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "ai_provider")
 		if tenant == "" {
 			return
 		}
@@ -309,9 +360,9 @@ func primaryAIProviderHandler(repo aiprovider.Repo) http.HandlerFunc {
 // before save: the user fills the form, clicks Test, we probe the
 // supplied (kind, model, base_url, api_key) with no persistence. The
 // Save button stays disabled until this returns ok=true.
-func testInlineAIProviderHandler() http.HandlerFunc {
+func testInlineAIProviderHandler(authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "ai_provider")
 		if tenant == "" {
 			return
 		}
@@ -325,10 +376,15 @@ func testInlineAIProviderHandler() http.HandlerFunc {
 			return
 		}
 		cfg := &aiprovider.Config{
-			TenantID: tenant,
-			Kind:     aiprovider.Kind(req.Kind),
-			Model:    req.Model,
-			BaseURL:  req.BaseURL,
+			TenantID:   tenant,
+			Kind:       aiprovider.Kind(req.Kind),
+			Model:      req.Model,
+			BaseURL:    req.BaseURL,
+			Deployment: req.Deployment,
+			APIVersion: req.APIVersion,
+			Region:     req.Region,
+			Project:    req.Project,
+			Location:   req.Location,
 		}
 		testErr := aiprovider.Test(r.Context(), cfg, []byte(req.APIKey))
 		if testErr != nil {

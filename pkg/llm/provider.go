@@ -88,6 +88,7 @@ type EmbedResponse struct {
 // Sentinel errors. Callers should errors.Is / errors.As to handle.
 var (
 	ErrEmbedUnsupported = errors.New("llm: provider does not support embeddings")
+	ErrChatUnsupported  = errors.New("llm: provider does not support chat")
 	ErrUnknownModel     = errors.New("llm: unknown model")
 	ErrRateLimited      = errors.New("llm: rate limited")
 	ErrContextLength    = errors.New("llm: context length exceeded")
