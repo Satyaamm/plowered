@@ -476,7 +476,7 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 	dsrRepo := postgres.NewDSRStore(pool)
 	outboxStore := postgres.NewOutboxStore(pool)
 	identityStore := postgres.NewIdentityStore(pool)
-	emailSender := buildEmailSender(logger)
+	emailSender := buildEmailSender(ctx, logger)
 	authCfg := buildAuthCfg(logger)
 	notifyStore := postgres.NewNotifyStore(pool)
 	// Dispatcher subscribes to the event bus and turns matching events
@@ -549,6 +549,7 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 			ContractTenants: contractStore,
 			Feedback:        postgres.NewFeedbackStore(pool),
 			VectorStores:    postgres.NewVectorStoreConfigStore(pool),
+			CloudStatus:     buildCloudStatus(),
 		}, func() {
 			if enqClose != nil {
 				_ = enqClose()
@@ -849,36 +850,87 @@ func newWarehouseFactory(conns connection.Repo, vault secrets.Vault) *warehouse.
 	return mf
 }
 
-// buildObjectStore returns the durable artifact store. If
-// PLOWERED_S3_BUCKET is set, we wire an S3-backed store using the
-// standard AWS credential chain. Otherwise we fall back to an
-// in-memory store — fine for single-process dev, NOT for production.
+// buildObjectStore returns the durable artifact store, picked by
+// PLOWERED_OBJECT_STORE_KIND: "s3" | "azure-blob" | "gcs" | "memory".
+// When the kind is unset we infer s3 from a present PLOWERED_S3_BUCKET
+// (back-compat with deployments predating the multi-cloud split) and
+// fall back to memory otherwise. Misconfigured backends log loudly and
+// degrade to memory rather than crashing the boot.
 //
-// Optional env: PLOWERED_S3_REGION (default us-east-1),
-// PLOWERED_S3_ENDPOINT (MinIO / R2 compatibility),
-// PLOWERED_S3_PATH_STYLE=1 (path-style addressing for MinIO).
+// Per-kind env:
+//
+//	s3         — PLOWERED_S3_BUCKET (req), PLOWERED_S3_REGION,
+//	             PLOWERED_S3_ENDPOINT (MinIO/R2), PLOWERED_S3_PATH_STYLE=1
+//	azure-blob — PLOWERED_AZURE_CONTAINER (req), plus either
+//	             PLOWERED_AZURE_CONNECTION_STRING or PLOWERED_AZURE_ACCOUNT
+//	             (the latter authing via DefaultAzureCredential)
+//	gcs        — PLOWERED_GCS_BUCKET (req); auth via ADC
 func buildObjectStore(ctx context.Context, logger *slog.Logger) blob.ObjectStore {
-	bucket := os.Getenv("PLOWERED_S3_BUCKET")
-	if bucket == "" {
-		logger.Info("object_store: PLOWERED_S3_BUCKET unset; using in-memory store (NOT durable)")
+	kind := os.Getenv("PLOWERED_OBJECT_STORE_KIND")
+	if kind == "" {
+		if os.Getenv("PLOWERED_S3_BUCKET") != "" {
+			kind = "s3"
+		} else {
+			kind = "memory"
+		}
+	}
+
+	switch kind {
+	case "s3":
+		bucket := os.Getenv("PLOWERED_S3_BUCKET")
+		if bucket == "" {
+			logger.Error("object_store: kind=s3 but PLOWERED_S3_BUCKET unset; using in-memory store")
+			return blob.NewInMem()
+		}
+		region := os.Getenv("PLOWERED_S3_REGION")
+		if region == "" {
+			region = "us-east-1"
+		}
+		store, err := blob.NewS3(ctx, blob.S3Config{
+			Bucket:       bucket,
+			Region:       region,
+			BaseEndpoint: os.Getenv("PLOWERED_S3_ENDPOINT"),
+			UsePathStyle: os.Getenv("PLOWERED_S3_PATH_STYLE") == "1",
+		})
+		if err != nil {
+			logger.Error("object_store: S3 init failed; falling back to in-memory", "err", err)
+			return blob.NewInMem()
+		}
+		logger.Info("object_store: S3 ready", "bucket", bucket, "region", region)
+		return store
+
+	case "azure-blob":
+		container := os.Getenv("PLOWERED_AZURE_CONTAINER")
+		store, err := blob.NewAzureBlob(ctx, blob.AzureBlobConfig{
+			Container:        container,
+			ConnectionString: os.Getenv("PLOWERED_AZURE_CONNECTION_STRING"),
+			Account:          os.Getenv("PLOWERED_AZURE_ACCOUNT"),
+		})
+		if err != nil {
+			logger.Error("object_store: Azure Blob init failed; falling back to in-memory", "err", err)
+			return blob.NewInMem()
+		}
+		logger.Info("object_store: Azure Blob ready", "container", container)
+		return store
+
+	case "gcs":
+		bucket := os.Getenv("PLOWERED_GCS_BUCKET")
+		store, err := blob.NewGCS(ctx, blob.GCSConfig{Bucket: bucket})
+		if err != nil {
+			logger.Error("object_store: GCS init failed; falling back to in-memory", "err", err)
+			return blob.NewInMem()
+		}
+		logger.Info("object_store: GCS ready", "bucket", bucket)
+		return store
+
+	case "memory":
+		logger.Info("object_store: using in-memory store (NOT durable)")
+		return blob.NewInMem()
+
+	default:
+		logger.Error("object_store: unknown kind; using in-memory store", "kind", kind)
 		return blob.NewInMem()
 	}
-	region := os.Getenv("PLOWERED_S3_REGION")
-	if region == "" {
-		region = "us-east-1"
-	}
-	s3Store, err := blob.NewS3(ctx, blob.S3Config{
-		Bucket:       bucket,
-		Region:       region,
-		BaseEndpoint: os.Getenv("PLOWERED_S3_ENDPOINT"),
-		UsePathStyle: os.Getenv("PLOWERED_S3_PATH_STYLE") == "1",
-	})
-	if err != nil {
-		logger.Error("object_store: S3 init failed; falling back to in-memory", "err", err)
-		return blob.NewInMem()
-	}
-	logger.Info("object_store: S3 ready", "bucket", bucket, "region", region)
-	return s3Store
 }
 
 // buildEnqueuer picks Asynq when PLOWERED_REDIS_URL is set, sync fallback
@@ -967,16 +1019,119 @@ func buildVault(logger *slog.Logger, pool *pgxpool.Pool) (secrets.Vault, error) 
 	return secrets.NewAESVault(key, storage)
 }
 
-// buildEmailSender returns a Resend-backed sender when PLOWERED_RESEND_API_KEY
-// is set; otherwise a LogSender that writes the message to slog (link in
-// the container logs is enough for local dev).
-func buildEmailSender(logger *slog.Logger) emailpkg.Sender {
-	key := os.Getenv("PLOWERED_RESEND_API_KEY")
-	if key == "" {
-		logger.Info("email: PLOWERED_RESEND_API_KEY unset — verification emails will be logged only")
+// buildEmailSender picks the transactional-email provider via
+// PLOWERED_EMAIL_PROVIDER: "resend" | "ses" | "log". Unset infers
+// resend when its API key is present (back-compat), log otherwise.
+// SES creds resolve through the standard AWS chain; only the region
+// needs configuring (PLOWERED_SES_REGION) because SES identities are
+// regional.
+func buildEmailSender(ctx context.Context, logger *slog.Logger) emailpkg.Sender {
+	provider := os.Getenv("PLOWERED_EMAIL_PROVIDER")
+	if provider == "" {
+		if os.Getenv("PLOWERED_RESEND_API_KEY") != "" {
+			provider = "resend"
+		} else {
+			provider = "log"
+		}
+	}
+
+	switch provider {
+	case "resend":
+		key := os.Getenv("PLOWERED_RESEND_API_KEY")
+		if key == "" {
+			logger.Error("email: provider=resend but PLOWERED_RESEND_API_KEY unset — logging emails only")
+			return emailpkg.LogSender{Logger: logger}
+		}
+		logger.Info("email: Resend ready")
+		return emailpkg.NewResendSender(key)
+
+	case "ses":
+		region := os.Getenv("PLOWERED_SES_REGION")
+		sender, err := emailpkg.NewSESSender(ctx, region)
+		if err != nil {
+			logger.Error("email: SES init failed — logging emails only", "err", err)
+			return emailpkg.LogSender{Logger: logger}
+		}
+		logger.Info("email: SES ready", "region", region)
+		return sender
+
+	case "log":
+		logger.Info("email: log provider — verification emails will be logged only")
+		return emailpkg.LogSender{Logger: logger}
+
+	default:
+		logger.Error("email: unknown provider — logging emails only", "provider", provider)
 		return emailpkg.LogSender{Logger: logger}
 	}
-	return emailpkg.NewResendSender(key)
+}
+
+// buildCloudStatus snapshots the effective infrastructure bindings for
+// GET /v1/cloud/status. Mirrors the inference rules in buildObjectStore
+// and buildEmailSender so the report always matches what actually got
+// wired. Details are strictly non-secret — names, regions, hosts.
+func buildCloudStatus() *apihttp.CloudStatus {
+	s := &apihttp.CloudStatus{}
+
+	// Object store — same kind inference as buildObjectStore.
+	kind := os.Getenv("PLOWERED_OBJECT_STORE_KIND")
+	if kind == "" {
+		if os.Getenv("PLOWERED_S3_BUCKET") != "" {
+			kind = "s3"
+		} else {
+			kind = "memory"
+		}
+	}
+	switch kind {
+	case "s3":
+		s.ObjectStore = apihttp.CloudBinding{Kind: "s3", Detail: os.Getenv("PLOWERED_S3_BUCKET")}
+	case "azure-blob":
+		s.ObjectStore = apihttp.CloudBinding{Kind: "azure-blob", Detail: os.Getenv("PLOWERED_AZURE_CONTAINER")}
+	case "gcs":
+		s.ObjectStore = apihttp.CloudBinding{Kind: "gcs", Detail: os.Getenv("PLOWERED_GCS_BUCKET")}
+	default:
+		s.ObjectStore = apihttp.CloudBinding{Kind: "memory"}
+	}
+
+	// Email — same provider inference as buildEmailSender.
+	provider := os.Getenv("PLOWERED_EMAIL_PROVIDER")
+	if provider == "" {
+		if os.Getenv("PLOWERED_RESEND_API_KEY") != "" {
+			provider = "resend"
+		} else {
+			provider = "log"
+		}
+	}
+	switch provider {
+	case "ses":
+		s.Email = apihttp.CloudBinding{Kind: "ses", Detail: os.Getenv("PLOWERED_SES_REGION")}
+	default:
+		s.Email = apihttp.CloudBinding{Kind: provider}
+	}
+
+	// Database / queue / events — protocol-level seams; report host only.
+	s.Database = apihttp.CloudBinding{Kind: "memory"}
+	if raw := os.Getenv("PLOWERED_DATABASE_URL"); raw != "" {
+		s.Database = apihttp.CloudBinding{Kind: "postgres", Detail: hostOnly(raw)}
+	}
+	s.Queue = apihttp.CloudBinding{Kind: "sync"}
+	if raw := os.Getenv("PLOWERED_REDIS_URL"); raw != "" {
+		s.Queue = apihttp.CloudBinding{Kind: "redis", Detail: hostOnly(raw)}
+	}
+	s.Events = apihttp.CloudBinding{Kind: "log"}
+	if raw := os.Getenv("PLOWERED_NATS_URL"); raw != "" {
+		s.Events = apihttp.CloudBinding{Kind: "nats", Detail: hostOnly(raw)}
+	}
+	return s
+}
+
+// hostOnly strips everything except host:port from a connection URL so
+// credentials never leak into the cloud-status report.
+func hostOnly(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Host
 }
 
 // buildAuthCfg reads the cookie / from-address / web-base-url settings

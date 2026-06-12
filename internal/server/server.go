@@ -95,6 +95,7 @@ type Deps struct {
 	ContractTenants contract.TenantLister
 	Feedback        feedback.Repo
 	VectorStores    vectorstore.Repo
+	CloudStatus     *apihttp.CloudStatus
 }
 
 // Run starts both listeners and blocks until ctx is cancelled.
@@ -246,6 +247,7 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		Contract:          deps.Contract,
 		Feedback:          deps.Feedback,
 		VectorStores:      deps.VectorStores,
+		CloudStatus:       deps.CloudStatus,
 	})
 	// Public endpoints — never require auth. /v1/auth/me + /v1/auth/logout
 	// deliberately omitted: those need an active session.

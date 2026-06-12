@@ -134,6 +134,10 @@ type Deps struct {
 	// routes aren't registered. The asset_embeddings + memory fallback
 	// continues to serve search until a tenant configures one.
 	VectorStores vectorstore.Repo
+
+	// CloudStatus powers GET /v1/cloud/status (admin-gated, non-secret
+	// infrastructure bindings). Optional — nil skips the route.
+	CloudStatus *CloudStatus
 }
 
 // NewMux returns an *http.ServeMux with every registered route. Callers
@@ -245,6 +249,9 @@ func NewMux(d Deps) *http.ServeMux {
 	}
 	if d.VectorStores != nil {
 		vectorStoreHandlers(mux, d.VectorStores, d.Vault, authz)
+	}
+	if d.CloudStatus != nil {
+		cloudHandlers(mux, d.CloudStatus, authz)
 	}
 	if d.Catalog != nil && d.Policies != nil {
 		accessHandlers(mux, d.Catalog, d.Policies, d.Identity, authz)
