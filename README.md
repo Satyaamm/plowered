@@ -119,6 +119,11 @@ requires callers to send the gateway header themselves.
 - **Raw OpenAPI** → http://localhost:8080/openapi.yaml
 - **Metrics** → http://localhost:8080/metrics (Prometheus exposition)
 
+## Further reading
+
+- [`COMMANDS.md`](COMMANDS.md) — every command you might need, grouped by task (local dev, prod deploy, DB, auth, tests, troubleshooting)
+- [`infra/`](infra/) — what infrastructure the system needs, sizing per tier, and which managed services to swap each bundled component for
+
 ---
 
 ## BYOM (bring your own model)
