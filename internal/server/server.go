@@ -29,6 +29,8 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/events"
 	"github.com/Satyaamm/plowered/internal/core/connection"
 	"github.com/Satyaamm/plowered/internal/core/email"
+	"github.com/Satyaamm/plowered/internal/core/feedback"
+	"github.com/Satyaamm/plowered/internal/core/vectorstore"
 	"github.com/Satyaamm/plowered/internal/core/glossary"
 	"github.com/Satyaamm/plowered/internal/core/identity"
 	"github.com/Satyaamm/plowered/internal/core/jobs"
@@ -91,6 +93,8 @@ type Deps struct {
 	CostTenants     cost.TenantLister
 	Contract        *contract.Service
 	ContractTenants contract.TenantLister
+	Feedback        feedback.Repo
+	VectorStores    vectorstore.Repo
 }
 
 // Run starts both listeners and blocks until ctx is cancelled.
@@ -240,6 +244,8 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		Cost:              deps.Cost,
 		CostBudgets:       deps.CostBudgets,
 		Contract:          deps.Contract,
+		Feedback:          deps.Feedback,
+		VectorStores:      deps.VectorStores,
 	})
 	// Public endpoints — never require auth. /v1/auth/me + /v1/auth/logout
 	// deliberately omitted: those need an active session.
@@ -275,7 +281,14 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		// Permissions / COOP / CORP. Standard hardening expected by
 		// SOC2 CC6.1 and OWASP secure-headers checklist.
 		apihttp.SecurityHeadersMW(),
-		apihttp.CORSMW(splitCSV(cfg.CORSAllowedOrigins)),
+		apihttp.CORSMW(apihttp.CORSConfig{
+			AllowedOrigins:   splitCSV(cfg.CORSAllowedOrigins),
+			AllowCredentials: cfg.CORSAllowCredentials,
+		}),
+		// Gateway-auth lives BEFORE auth so a probe with a wrong key
+		// never reaches the password handler. Skip-paths keep the
+		// load-balancer health probes + Swagger UI reachable.
+		apihttp.GatewayAuthMW(cfg.GatewaySecret, splitCSV(cfg.GatewaySecretSkipPaths)...),
 		// Per-IP rate limit on the credential-mutation endpoints. 5/min,
 		// burst 8 — generous for a human, lethal for a brute-force bot.
 		// Lives BEFORE auth so unauthenticated probes can be throttled.

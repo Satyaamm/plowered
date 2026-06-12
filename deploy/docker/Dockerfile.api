@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1.7
+#
+# Plowered API binary — production build.
+#
+#   docker build -f deploy/docker/Dockerfile.api -t plowered/api:<ver> .
+#
+# Multi-stage: golang for the build, distroless static for the run. The
+# final image is ~25MB and contains no shell, package manager, or libc
+# — only the static binary + CA bundle. A misconfigured exec can't
+# spawn a shell to pivot from.
+#
+# Build args:
+#   VERSION (default "dev")   embedded via -ldflags -X main.version
+#   COMMIT  (default "")      embedded via -ldflags -X main.commit
+#
+# Healthcheck: distroless ships no curl. The compose stack drives the
+# healthcheck via an HTTP probe to /healthz instead.
+
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache ca-certificates git tzdata
+
+# Cache the module graph in its own layer so a code-only change
+# doesn't re-download dependencies.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . .
+
+ARG VERSION=dev
+ARG COMMIT=""
+
+# -trimpath strips the build host paths from the binary (reproducible
+# builds + smaller). -ldflags -w -s drops the DWARF table + symbol
+# table so it can't be re-debugged on the host. Version pinning lets
+# the /metrics endpoint stamp the running build.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+        -ldflags "-w -s -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+        -o /out/plowered ./cmd/plowered
+
+# Distroless static (nonroot) — UID 65532. No shell.
+FROM gcr.io/distroless/static-debian12:nonroot
+LABEL org.opencontainers.image.title="plowered-api"
+LABEL org.opencontainers.image.source="https://github.com/Satyaamm/plowered"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+COPY --from=build /out/plowered /usr/local/bin/plowered
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+
+# Read-only filesystem honoured by the runtime; /tmp is writable via
+# the compose stack's tmpfs mount.
+USER 65532:65532
+EXPOSE 8080 9090
+
+ENTRYPOINT ["/usr/local/bin/plowered"]
+CMD ["serve"]

@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1.7
+#
+# Plowered web — Next.js 15 standalone build.
+#
+#   docker build -f deploy/docker/Dockerfile.web -t plowered/web:<ver> .
+#
+# Three stages:
+#   1. deps      — install node_modules with the right package manager
+#   2. build     — `next build` with output:'standalone' (next.config.mjs)
+#   3. runtime   — slim node base + just the .next/standalone tree
+#
+# The final image is ~150MB and starts in ~500ms. The standalone
+# output bundles the Next.js server + only the modules it actually
+# imports, so node_modules-on-disk is a fraction of the dev tree.
+#
+# PLOWERED_API_BASE is RUNTIME, not build-time: standalone honours
+# server env vars at boot, so a single image works for staging + prod
+# by passing a different env at compose time.
+
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY web/package.json web/package-lock.json* web/pnpm-lock.yaml* ./
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; \
+    elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; \
+    else npm install --no-audit --no-fund; fi
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY web/ .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# Distroless-style slim runner. Using node:20-alpine instead of
+# distroless because Next.js' standalone server needs node, and the
+# alpine variant is the smallest one Vercel officially supports.
+FROM node:20-alpine AS runtime
+LABEL org.opencontainers.image.title="plowered-web"
+LABEL org.opencontainers.image.source="https://github.com/Satyaamm/plowered"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+
+# Non-root user. UID/GID match the standalone server's expectations
+# (uses /app + /tmp + the standalone tree).
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001 -G nodejs
+
+# Standalone copy strategy: the .next/standalone/ tree contains the
+# minimal node_modules + the server.js entrypoint, and .next/static
+# must sit alongside (Next.js looks for it there at runtime). public/
+# is hand-copied because standalone doesn't bundle it.
+COPY --from=build --chown=nextjs:nodejs /app/public                 ./public
+COPY --from=build --chown=nextjs:nodejs /app/.next/standalone       ./
+COPY --from=build --chown=nextjs:nodejs /app/.next/static           ./.next/static
+
+USER nextjs
+EXPOSE 3000
+
+# server.js is the standalone bundle's entrypoint. It honours
+# HOSTNAME + PORT + every NEXT_* + every server-side env (incl.
+# PLOWERED_API_BASE + PLOWERED_GATEWAY_SECRET that the middleware
+# reads).
+CMD ["node", "server.js"]

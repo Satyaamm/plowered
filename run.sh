@@ -1,3 +1,7 @@
+# claude --resume a1b25270-c2cc-4938-8f78-9ab5d8969b2c
+
+
+
 #!/usr/bin/env bash
 #
 # run.sh — single-command local dev for Plowered.

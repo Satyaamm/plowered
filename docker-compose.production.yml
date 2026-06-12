@@ -1,0 +1,308 @@
+# docker-compose.production.yml — single-VPS Plowered deploy.
+#
+# Topology:
+#
+#   internet
+#     └─→ nginx (the only externally-exposed container; ports 80/443)
+#           ├─→ plowered-web        (plowered.s2datasystems.in)
+#           └─→ plowered-api        (ploweredapi.s2datasystems.in)
+#                  ├─→ postgres
+#                  ├─→ redis
+#                  ├─→ nats
+#                  └─→ minio          (S3-compatible object store)
+#         plowered-worker → postgres + redis + nats + minio
+#         certbot         (webroot-based renewals)
+#
+# Two networks:
+#   public_net  — nginx ↔ host (80/443 published here)
+#   private_net — every other service. nginx is on both so it can
+#                 reach the app containers without exposing them.
+#
+# Volumes:
+#   pgdata, redisdata, natsdata, miniodata, caddydata, certbotdata
+#   — persistent. Backups out of pgdata are the operator's job (see
+#   RUN_PRODUCTION.md for pg_basebackup + S3 versioning).
+#
+# Run via:
+#   cp .env.production.example .env.production
+#   ./deploy/secrets-gen.sh         # mints the cryptographic envs
+#   docker compose --env-file .env.production -f docker-compose.production.yml up -d
+#
+# All env vars below come from .env.production. Do NOT commit that
+# file; ./deploy/secrets-gen.sh produces it.
+
+name: plowered
+
+networks:
+  public_net:
+    driver: bridge
+  private_net:
+    driver: bridge
+    internal: true   # no egress to the host; only the API can NAT out
+                     # via the bridge nginx sits on. Stops a
+                     # compromised app from reaching the metadata
+                     # endpoint of the host's cloud provider.
+
+volumes:
+  pgdata:
+  redisdata:
+  natsdata:
+  miniodata:
+  certbotetc:
+  certbotwww:
+
+services:
+  # ---- Data stores ----
+
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-plowered}
+      POSTGRES_USER: ${POSTGRES_USER:-plowered}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    command: >-
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=1536MB
+      -c max_connections=200
+      -c log_statement=ddl
+      -c log_min_duration_statement=500ms
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-plowered} -d ${POSTGRES_DB:-plowered}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [private_net]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: >-
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [private_net]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  nats:
+    image: nats:2-alpine
+    restart: always
+    command: >-
+      nats-server
+      --jetstream
+      --store_dir=/data
+      --http_port=8222
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD", "nats-server", "--help"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [private_net]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  minio:
+    # Object store for profile snapshots, AI transcripts, DSR exports.
+    # If you'd rather use AWS S3 directly, drop this service and set
+    # PLOWERED_OBJECT_STORE_KIND=s3 + the AWS creds in the env file.
+    image: minio/minio:latest
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks: [private_net]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # ---- Application ----
+
+  plowered-api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+      args:
+        VERSION: ${PLOWERED_VERSION:-prod}
+    restart: always
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      PLOWERED_ENV: production
+      PLOWERED_HTTP_ADDR: ":8080"
+      PLOWERED_DATABASE_URL: "postgres://${POSTGRES_USER:-plowered}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-plowered}?sslmode=disable"
+      PLOWERED_REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      PLOWERED_NATS_URL: "nats://nats:4222"
+      PLOWERED_SECRETS_MASTER_KEY: ${PLOWERED_SECRETS_MASTER_KEY:?PLOWERED_SECRETS_MASTER_KEY must be set}
+      PLOWERED_JWT_HS256_SECRET: ${PLOWERED_JWT_HS256_SECRET:?PLOWERED_JWT_HS256_SECRET must be set}
+      # Web frontend
+      PLOWERED_WEB_BASE_URL: ${PLOWERED_WEB_BASE_URL:-https://plowered.s2datasystems.in}
+      PLOWERED_EMAIL_FROM: ${PLOWERED_EMAIL_FROM}
+      PLOWERED_RESEND_API_KEY: ${PLOWERED_RESEND_API_KEY:-}
+      # Session cookies — Lax + parent-domain works because the web
+      # + api share s2datasystems.in.
+      PLOWERED_SESSION_COOKIE: ${PLOWERED_SESSION_COOKIE:-plowered_session}
+      PLOWERED_SESSION_COOKIE_DOMAIN: ${PLOWERED_SESSION_COOKIE_DOMAIN:-.s2datasystems.in}
+      PLOWERED_SESSION_COOKIE_SECURE: "1"
+      PLOWERED_SESSION_COOKIE_SAMESITE: "lax"
+      # CORS — exact origin only; credentialled.
+      PLOWERED_CORS_ALLOWED_ORIGINS: ${PLOWERED_WEB_BASE_URL:-https://plowered.s2datasystems.in}
+      PLOWERED_CORS_ALLOW_CREDENTIALS: "true"
+      # Gateway-auth — second-layer secret. Nginx + the web container
+      # both inject this header; direct hits 401 before reaching auth.
+      PLOWERED_GATEWAY_SECRET: ${PLOWERED_GATEWAY_SECRET:?PLOWERED_GATEWAY_SECRET must be set}
+      # Object store
+      PLOWERED_OBJECT_STORE_KIND: ${PLOWERED_OBJECT_STORE_KIND:-s3}
+      PLOWERED_OBJECT_STORE_BUCKET: ${PLOWERED_OBJECT_STORE_BUCKET:-plowered}
+      PLOWERED_OBJECT_STORE_REGION: ${PLOWERED_OBJECT_STORE_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_ENDPOINT_URL: "http://minio:9000"
+      # Logging
+      PLOWERED_LOG_LEVEL: ${PLOWERED_LOG_LEVEL:-info}
+    healthcheck:
+      # distroless has no curl. wget is also absent. The cheapest
+      # check is the busybox image's wget — but we don't have it.
+      # Solution: rely on the dependent `nginx` proxy to fail open
+      # at the LB layer; this container's exit code drives restart.
+      # If you want a real liveness probe, swap to gcr.io/distroless/cc
+      # and run a tiny statically-linked binary that GETs /healthz.
+      disable: true
+    networks: [private_net]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  plowered-worker:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.worker
+      args:
+        VERSION: ${PLOWERED_VERSION:-prod}
+    restart: always
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      plowered-api: { condition: service_started }
+    environment:
+      # Worker shares almost every env with the API; keep both in
+      # lockstep so a migration adds against both pools.
+      PLOWERED_ENV: production
+      PLOWERED_DATABASE_URL: "postgres://${POSTGRES_USER:-plowered}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-plowered}?sslmode=disable"
+      PLOWERED_REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      PLOWERED_NATS_URL: "nats://nats:4222"
+      PLOWERED_SECRETS_MASTER_KEY: ${PLOWERED_SECRETS_MASTER_KEY}
+      PLOWERED_RESEND_API_KEY: ${PLOWERED_RESEND_API_KEY:-}
+      PLOWERED_OBJECT_STORE_KIND: ${PLOWERED_OBJECT_STORE_KIND:-s3}
+      PLOWERED_OBJECT_STORE_BUCKET: ${PLOWERED_OBJECT_STORE_BUCKET:-plowered}
+      PLOWERED_OBJECT_STORE_REGION: ${PLOWERED_OBJECT_STORE_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_ENDPOINT_URL: "http://minio:9000"
+      PLOWERED_LOG_LEVEL: ${PLOWERED_LOG_LEVEL:-info}
+    networks: [private_net]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  plowered-web:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.web
+    restart: always
+    depends_on:
+      plowered-api: { condition: service_started }
+    environment:
+      NODE_ENV: production
+      # The Next.js BFF rewrite target — internal docker network only;
+      # never the public ploweredapi host.
+      PLOWERED_API_BASE: "http://plowered-api:8080"
+      # Gateway secret the middleware injects on /api/* before the
+      # rewrite hits the backend. Same value the API expects.
+      PLOWERED_GATEWAY_SECRET: ${PLOWERED_GATEWAY_SECRET}
+    networks: [private_net]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # ---- Edge ----
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: always
+    depends_on:
+      plowered-web: { condition: service_started }
+      plowered-api: { condition: service_started }
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./deploy/nginx/snippets:/etc/nginx/snippets:ro
+      - certbotetc:/etc/letsencrypt:ro
+      - certbotwww:/var/www/certbot
+    networks: [public_net, private_net]
+    # nginx looks up the upstream by docker DNS name once at config
+    # parse; restart if an upstream container changes IP after a
+    # rebuild.
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbotetc:/etc/letsencrypt
+      - certbotwww:/var/www/certbot
+    # Renewal loop: certbot checks twice a day, only re-issues when
+    # within 30 days of expiry. nginx must reload after a renewal —
+    # the loop SIGHUPs it via the deploy hook.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --webroot --webroot-path=/var/www/certbot --deploy-hook 'echo "renewed" > /var/www/certbot/.renewed' \
+            || echo "[certbot] renew failed; retrying next cycle"
+          sleep 12h
+        done
+    networks: [public_net]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }

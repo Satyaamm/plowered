@@ -33,8 +33,21 @@ import (
 	"github.com/Satyaamm/plowered/internal/adapters/mongodb_source"
 	"github.com/Satyaamm/plowered/internal/adapters/postgres_source"
 	"github.com/Satyaamm/plowered/internal/adapters/snowflake_source"
+	// bedrock_provider + vertex_provider init() register themselves with
+	// aiprovider so KindBedrock + KindVertex resolve to real drivers.
+	// Drop either named import to ship without that cloud's SDK.
+	_ "github.com/Satyaamm/plowered/internal/adapters/bedrock_provider"
+	_ "github.com/Satyaamm/plowered/internal/adapters/vertex_provider"
+	// vectorstore drivers — each init() registers itself with vectorstore
+	// so KindPinecone / KindWeaviate / KindQdrant resolve. The pgvector
+	// + memory backends are compiled in by default in the vectorstore
+	// package itself.
+	_ "github.com/Satyaamm/plowered/internal/adapters/pinecone_vectorstore"
+	_ "github.com/Satyaamm/plowered/internal/adapters/qdrant_vectorstore"
+	_ "github.com/Satyaamm/plowered/internal/adapters/weaviate_vectorstore"
 	"github.com/Satyaamm/plowered/internal/config"
 	"github.com/Satyaamm/plowered/internal/core/audit"
+	"github.com/Satyaamm/plowered/internal/core/vectorstore"
 	"github.com/Satyaamm/plowered/internal/core/classifier"
 	"github.com/Satyaamm/plowered/internal/core/connection"
 	"github.com/Satyaamm/plowered/internal/core/deleted"
@@ -394,6 +407,13 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 		Logger:   logger,
 	}
 	embeddingStore := postgres.NewEmbeddingStore(pool)
+	// Register the pgvector backend with the vectorstore seam so a
+	// tenant's KindPgvector config resolves to the existing
+	// asset_embeddings table without duplicating the index. The
+	// "default" model matches the local-embeddings provider above; when
+	// the resolver grows multi-model support this widens to take the
+	// model id from the request.
+	vectorstore.SetPgvectorStore(postgres.NewPgvectorAssetEmbeddings(pool, "default"))
 	searchIndexer := &search.Indexer{
 		Catalog:  cat,
 		Provider: local.New(),
@@ -527,6 +547,8 @@ func buildDeps(ctx context.Context, cfg server.Config, logger *slog.Logger) (ser
 				}
 			}(),
 			ContractTenants: contractStore,
+			Feedback:        postgres.NewFeedbackStore(pool),
+			VectorStores:    postgres.NewVectorStoreConfigStore(pool),
 		}, func() {
 			if enqClose != nil {
 				_ = enqClose()
@@ -966,7 +988,12 @@ func buildAuthCfg(logger *slog.Logger) apihttp.AuthConfig {
 		CookieName:   firstNonEmptyEnv("PLOWERED_SESSION_COOKIE", "plowered_session"),
 		CookieDomain: os.Getenv("PLOWERED_SESSION_COOKIE_DOMAIN"),
 		CookieSecure: os.Getenv("PLOWERED_SESSION_COOKIE_SECURE") == "1",
-		Logger:       logger,
+		// SameSite default: lax. Cross-site cookies (different
+		// registrable domain frontend ↔ backend) require "none" +
+		// CookieSecure=true. Sibling subdomains share Lax + a domain
+		// hint.
+		CookieSameSite: firstNonEmptyEnv("PLOWERED_SESSION_COOKIE_SAMESITE", "lax"),
+		Logger:         logger,
 	}
 }
 
