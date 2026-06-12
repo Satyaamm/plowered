@@ -68,7 +68,9 @@ export default function NewPipelinePage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [cron, setCron] = useState("");
-  const [enabled, setEnabled] = useState(true);
+  // Schedules default to OFF so a new pipeline never starts firing on
+  // its cron the moment the user saves it — they have to opt in.
+  const [enabled, setEnabled] = useState(false);
   const [failFast, setFailFast] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
 

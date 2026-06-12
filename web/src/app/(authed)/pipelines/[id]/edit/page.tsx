@@ -98,7 +98,7 @@ export default function EditPipelinePage({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [cron, setCron] = useState("");
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false);
   const [failFast, setFailFast] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
 
@@ -111,7 +111,7 @@ export default function EditPipelinePage({
       setName(pipeline.Name ?? "");
       setDescription(pipeline.Description ?? "");
       setCron(pipeline.Schedule?.Cron ?? "");
-      setEnabled(pipeline.Schedule?.Enabled ?? true);
+      setEnabled(pipeline.Schedule?.Enabled ?? false);
       setFailFast(pipeline.FailFast ?? true);
       setTasks((pipeline.Tasks ?? []) as Task[]);
       setHydrated(true);
