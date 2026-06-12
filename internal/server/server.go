@@ -283,6 +283,10 @@ func buildHTTPHandler(cfg Config, deps Deps, health *healthState) nethttp.Handle
 		// Permissions / COOP / CORP. Standard hardening expected by
 		// SOC2 CC6.1 and OWASP secure-headers checklist.
 		apihttp.SecurityHeadersMW(),
+		// Body controls: size cap + application/json-only + smuggling
+		// hygiene. Before CORS/auth so an oversized or binary payload
+		// never reaches deeper middleware.
+		apihttp.BodyGuardMW(cfg.MaxBodyBytes),
 		apihttp.CORSMW(apihttp.CORSConfig{
 			AllowedOrigins:   splitCSV(cfg.CORSAllowedOrigins),
 			AllowCredentials: cfg.CORSAllowCredentials,

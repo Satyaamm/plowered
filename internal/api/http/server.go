@@ -9,6 +9,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
@@ -345,7 +346,17 @@ func decodeJSON(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			return fmt.Errorf("request body exceeds %d bytes", tooBig.Limit)
+		}
 		return err
+	}
+	// A second document after the first (`{"a":1}{"b":2}`, or trailing
+	// garbage) is never legitimate — reject instead of silently using
+	// only the first value.
+	if dec.More() {
+		return errors.New("unexpected trailing data after JSON body")
 	}
 	return nil
 }

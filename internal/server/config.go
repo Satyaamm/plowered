@@ -46,6 +46,10 @@ type Config struct {
 	// the gateway-auth check skips. /healthz + /readyz + /metrics must
 	// stay reachable for the load balancer; default lists them.
 	GatewaySecretSkipPaths string
+
+	// MaxBodyBytes caps every request body via BodyGuardMW. 0 falls
+	// back to the middleware default (2 MiB). Env: PLOWERED_MAX_BODY_BYTES.
+	MaxBodyBytes int64
 }
 
 func LoadConfig() (Config, error) {
@@ -76,6 +80,12 @@ func LoadConfig() (Config, error) {
 		return cfg, err
 	}
 	cfg.RateLimitBurst = burst
+
+	maxBody, err := parseInt("PLOWERED_MAX_BODY_BYTES", 2<<20)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.MaxBodyBytes = int64(maxBody)
 
 	return cfg, nil
 }
