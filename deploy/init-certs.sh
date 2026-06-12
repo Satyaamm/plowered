@@ -22,8 +22,15 @@ if [[ $# -lt 1 ]]; then
 fi
 EMAIL="$1"
 
-WEB_DOMAIN="${WEB_DOMAIN:-plowered.s2datasystems.in}"
-API_DOMAIN="${API_DOMAIN:-ploweredapi.s2datasystems.in}"
+# Domains come from .env.production (written by secrets-gen.sh) so the
+# certs always match what nginx serves. We grep the two keys rather
+# than sourcing the whole file — values like PLOWERED_EMAIL_FROM
+# contain shell metacharacters. Env vars passed to this script win.
+envval() { grep -E "^$1=" .env.production 2>/dev/null | head -1 | cut -d= -f2-; }
+WEB_DOMAIN="${WEB_DOMAIN:-$(envval WEB_DOMAIN)}"
+API_DOMAIN="${API_DOMAIN:-$(envval API_DOMAIN)}"
+WEB_DOMAIN="${WEB_DOMAIN:-plowered.s2datasystems.com}"
+API_DOMAIN="${API_DOMAIN:-ploweredapi.s2datasystems.com}"
 
 CERTBOT_ETC="$(docker volume inspect plowered_certbotetc -f '{{ .Mountpoint }}' 2>/dev/null || true)"
 

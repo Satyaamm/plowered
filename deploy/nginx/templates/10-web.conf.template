@@ -1,20 +1,23 @@
-# plowered.s2datasystems.in — the Next.js web app.
+# ${WEB_DOMAIN} — the Next.js web app.
 #
 # The /api/* path is also served from here (BFF pattern). The Next.js
 # middleware injects the X-Gateway-Auth header server-side, then
 # rewrites to http://plowered-api:8080 over the internal docker
 # network. Browsers never see the gateway secret.
+#
+# Load balancing: the upstream is resolved through Docker's embedded
+# DNS per request (resolver + variable proxy_pass), so scaling the
+# web service (docker compose up -d --scale plowered-web=2) round-
+# robins with no nginx change.
 
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
-    server_name plowered.s2datasystems.in;
+    server_name ${WEB_DOMAIN};
 
-    # Certs issued by certbot. Bootstrap with the snake-oil cert + the
-    # first certbot run; see RUN_PRODUCTION.md.
-    ssl_certificate     /etc/letsencrypt/live/plowered.s2datasystems.in/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/plowered.s2datasystems.in/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/${WEB_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${WEB_DOMAIN}/privkey.pem;
 
     include /etc/nginx/snippets/security_headers.conf;
 
@@ -29,15 +32,19 @@ server {
     # at line-rate; the throttle kicks in after.
     limit_req zone=zone_general burst=60 nodelay;
 
-    # ACME challenge still works during a cert renewal (certbot
-    # writes to /var/www/certbot, this serves from same path).
+    # ACME challenge still works during a cert renewal.
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
+    # Docker embedded DNS — re-resolve upstreams every 10s so scaled
+    # replicas and recreated containers are picked up live.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
     # Next.js standalone server.
     location / {
         include /etc/nginx/snippets/proxy_common.conf;
-        proxy_pass http://plowered-web:3000;
+        set $web_upstream http://plowered-web:3000;
+        proxy_pass $web_upstream;
     }
 }

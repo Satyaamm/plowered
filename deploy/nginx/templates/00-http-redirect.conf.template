@@ -1,10 +1,15 @@
 # Port 80 — only carries the ACME webroot challenge + redirects every
 # other request to HTTPS. Applies to both subdomains.
+#
+# This file is an envsubst template: ${WEB_DOMAIN} and ${API_DOMAIN}
+# come from the nginx container's environment (set in compose).
+# nginx's own runtime variables ($host, $request_uri, …) are NOT in
+# the environment, so the entrypoint leaves them alone.
 
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name plowered.s2datasystems.in ploweredapi.s2datasystems.in;
+    server_name ${WEB_DOMAIN} ${API_DOMAIN};
 
     # /healthz served straight on port 80 so the docker healthcheck +
     # any external uptime probe still works during cert renewal.
@@ -20,8 +25,7 @@ server {
         root /var/www/certbot;
     }
 
-    # Everything else: 301 to the HTTPS equivalent. Browsers cache
-    # the redirect, so the cost is one round trip per fresh session.
+    # Everything else: 301 to the HTTPS equivalent.
     location / {
         return 301 https://$host$request_uri;
     }
