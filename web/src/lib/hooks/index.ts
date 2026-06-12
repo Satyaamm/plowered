@@ -27,5 +27,6 @@ export * from "./use-migrations";
 export * from "./use-certifications";
 export * from "./use-cost";
 export * from "./use-contracts";
+export * from "./use-cloud";
 export * from "./use-feedback";
 export * from "./use-vectorstores";

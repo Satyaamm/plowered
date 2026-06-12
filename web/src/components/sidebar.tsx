@@ -34,6 +34,7 @@ import {
   ChevronDoubleLeft20Regular,
   ChevronDoubleRight20Regular,
   ChatHelp24Regular,
+  Cloud24Regular,
 } from "@fluentui/react-icons";
 import { useRole } from "@/lib/hooks";
 
@@ -121,6 +122,7 @@ const GROUPS: Group[] = [
       { label: "Identity",     href: "/identity",    icon: <Person24Regular /> },
       { label: "AI providers",   href: "/settings/ai",           icon: <Sparkle24Regular />,  tour: "nav-ai" },
       { label: "Vector stores",  href: "/settings/vectorstores", icon: <Sparkle24Regular />,  tour: "nav-vectorstores" },
+      { label: "Cloud",          href: "/settings/cloud",        icon: <Cloud24Regular /> },
       { label: "Account",        href: "/account",               icon: <Person24Regular /> },
     ],
   },
