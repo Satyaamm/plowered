@@ -1,19 +1,7 @@
-import { tokens } from "@fluentui/react-components";
-
-// Public shell — login, signup, verify all live here. No sidebar, no
-// topbar; one centered card on a soft cream canvas. Mirrors Azure's
-// portal sign-in: white surface, single primary action, branded chrome.
+// Public shell — login, signup, forgot/reset, verify, accept-invite.
+// AuthShell renders its own full-bleed split layout (left form pane,
+// right animated lineage pane), so this wrapper just hands the page
+// through without imposing extra chrome.
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        gridTemplateColumns: "1fr",
-        background: "#F5F5F5",
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <>{children}</>;
 }

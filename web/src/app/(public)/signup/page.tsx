@@ -234,10 +234,7 @@ export default function SignupPage() {
     };
 
   return (
-    <AuthShell
-      title="Create your workspace"
-      subtitle="Catalog, governance, and lineage — yours in under a minute."
-    >
+    <AuthShell title="Create your workspace">
       <form className={styles.form} onSubmit={onSubmit} noValidate>
         <Field
           label={

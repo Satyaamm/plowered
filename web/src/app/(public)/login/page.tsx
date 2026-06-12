@@ -72,10 +72,7 @@ function LoginInner() {
   const needsVerify = err?.code === "email_not_verified";
 
   return (
-    <AuthShell
-      title="Sign in"
-      subtitle="Welcome back to your data context platform."
-    >
+    <AuthShell title="Log in to the system">
       <form className={styles.form} onSubmit={onSubmit}>
         <Field
           label={

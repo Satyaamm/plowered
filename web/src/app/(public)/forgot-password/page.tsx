@@ -48,10 +48,7 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <AuthShell
-        title="Check your inbox"
-        subtitle="If an account exists for that address, a reset link is on its way. The link expires in 24 hours."
-      >
+      <AuthShell title="Check your inbox">
         <Link href="/login" className={styles.link}>
           Back to sign in
         </Link>
@@ -60,10 +57,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <AuthShell
-      title="Reset your password"
-      subtitle="Tell us the email tied to your account and we'll send a reset link."
-    >
+    <AuthShell title="Reset your password">
       <form className={styles.form} onSubmit={submit} noValidate>
         <Field
           label={
