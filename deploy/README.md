@@ -1,5 +1,26 @@
 # VPS deploy runbook
 
+## TL;DR — shared VPS (the current production box)
+
+The production VPS already runs a host nginx on 80/443 plus other
+services on 5432/6379, so Plowered deploys in the HOST-EDGE shape via
+one command from this repo:
+
+```bash
+bash deploy.sh        # type 'prod' at the confirmation prompt
+```
+
+That script pushes .env.production, rsyncs the code, provisions host
+nginx + Let's Encrypt for both domains, and starts the compose stack
+with the `deploy/compose.host-edge.yml` overlay — the bundled nginx +
+certbot containers stay parked, and web/api publish loopback-only
+ports (127.0.0.1:3005 / 127.0.0.1:8085) for host nginx to proxy.
+
+Everything below documents the SELF-CONTAINED shape (dedicated VPS
+where the bundled container nginx owns 80/443).
+
+---
+
 Fully self-contained stack: Postgres, Redis, NATS, MinIO, API, worker,
 web, nginx, certbot — all containers in one compose file. nginx is the
 only thing the internet can reach.
@@ -8,7 +29,7 @@ only thing the internet can reach.
 
 1. **DNS** — two A records pointing at the VPS:
    - `plowered.s2datasystems.com` (web)
-   - `ploweredapi.s2datasystems.com` (direct API)
+   - `api.plowered.s2datasystems.com` (direct API)
    Change them in `.env.production` (`WEB_DOMAIN` / `API_DOMAIN` /
    `PLOWERED_SESSION_COOKIE_DOMAIN`) if you use different hosts.
 2. **Firewall** — open 80 + 443 only. Do NOT open 5432/6379/6543/7479;
@@ -33,7 +54,7 @@ git clone https://github.com/Satyaamm/plowered.git && cd plowered
 
 # 2. Issue Let's Encrypt certs for both domains (reads the domains
 #    from .env.production). One-shot; renewals are automatic after.
-./deploy/init-certs.sh admin@s2datasystems.com
+./deploy/init-certs.sh satyam.pathak@s2datasystems.in
 
 # 3. Build + start everything.
 docker compose --env-file .env.production -f docker-compose.production.yml up -d --build

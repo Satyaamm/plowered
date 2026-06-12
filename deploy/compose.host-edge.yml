@@ -1,0 +1,38 @@
+# compose.host-edge.yml — overlay for VPSes that already run a HOST
+# nginx on 80/443 (shared boxes hosting multiple apps).
+#
+#   docker compose -f docker-compose.production.yml \
+#                  -f deploy/compose.host-edge.yml \
+#                  --env-file .env.production up -d
+#
+# What it changes versus the self-contained stack:
+#   - The bundled nginx + certbot containers are parked behind a
+#     never-activated profile (ports 80/443 stay free for host nginx).
+#   - plowered-web and plowered-api publish LOOPBACK-ONLY host ports
+#     (127.0.0.1:${WEB_HOST_PORT}/3000 and 127.0.0.1:${API_HOST_PORT}/8080)
+#     for host nginx to proxy to. Loopback binding means nothing on the
+#     internet can reach the containers directly — only the host's
+#     nginx (which deploy.sh provisions with TLS + rate limits +
+#     the gateway-auth check).
+#
+# deploy.sh installs the matching host-nginx vhosts from
+# deploy/nginx-host/ and issues Let's Encrypt certs with the host's
+# certbot.
+
+services:
+  nginx:
+    profiles: ["bundled-edge-disabled"]
+
+  certbot:
+    profiles: ["bundled-edge-disabled"]
+
+  plowered-web:
+    # Joins public_net so the port publish has a non-internal bridge
+    # to bind through; still no direct internet exposure (loopback).
+    networks: [public_net, private_net]
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-3005}:3000"
+
+  plowered-api:
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8085}:8080"

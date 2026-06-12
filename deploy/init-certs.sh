@@ -30,7 +30,7 @@ envval() { grep -E "^$1=" .env.production 2>/dev/null | head -1 | cut -d= -f2-; 
 WEB_DOMAIN="${WEB_DOMAIN:-$(envval WEB_DOMAIN)}"
 API_DOMAIN="${API_DOMAIN:-$(envval API_DOMAIN)}"
 WEB_DOMAIN="${WEB_DOMAIN:-plowered.s2datasystems.com}"
-API_DOMAIN="${API_DOMAIN:-ploweredapi.s2datasystems.com}"
+API_DOMAIN="${API_DOMAIN:-api.plowered.s2datasystems.com}"
 
 CERTBOT_ETC="$(docker volume inspect plowered_certbotetc -f '{{ .Mountpoint }}' 2>/dev/null || true)"
 
