@@ -74,6 +74,36 @@ const STEPS: Step[] = [
       "re-authenticate into another — Plowered binds each session to exactly one tenant for hard " +
       "isolation.",
   },
+  // ---- Ask (Text-to-SQL) ----
+  {
+    route: "/ask",
+    title: "Ask — natural-language to SQL",
+    description:
+      "Pick a connection, type a question in plain English, and the model drafts a read-only SELECT " +
+      "against that source's catalog. Nothing executes until you click Run, and INSERT / UPDATE / " +
+      "DELETE / DROP are refused even if the model writes one. Runs through your tenant's BYOM key " +
+      "(set up under Settings → AI providers), so cost rolls into the /cost dashboard.",
+  },
+  {
+    route: "/ask",
+    element: '[data-tour="page-intro"]',
+    side: "bottom",
+    title: "Quick reminder — the info icon",
+    description:
+      "Every feature page has this small info icon in the header. Click it any time for a one-screen " +
+      "explanation of what the page does and how to get started. Try it here, then on /contracts, " +
+      "/certifications, and /cost.",
+  },
+  {
+    route: "/ask",
+    element: '[data-tour="ask-draft"]',
+    side: "top",
+    title: "Draft SQL — the action button",
+    description:
+      "After you've picked a connection and typed a question (max 500 characters), click this to ask " +
+      "the model for a SELECT. Disabled until an LLM provider is wired and the inputs are valid. The " +
+      "result lands inline; a separate Run button executes it against the warehouse.",
+  },
   // ---- Catalog ----
   {
     route: "/catalog",
@@ -82,7 +112,7 @@ const STEPS: Step[] = [
       "Tables, views, columns, dashboards, models. Each asset carries qualified name, type, owners, " +
       "tags, classifications (PII / PHI / PCI / secret — auto-detected on crawl), lineage edges, and " +
       "linked glossary terms. Use the tabs to filter by type, click a row to drill into Schema / " +
-      "Lineage / Quality / Activity tabs on the detail page.",
+      "Lineage / Quality / Activity / Contract tabs on the detail page.",
   },
   // ---- Pipelines ----
   {
@@ -102,6 +132,17 @@ const STEPS: Step[] = [
       "task-level logs. Auto-polls every 5 seconds while runs are in flight. Click a run to see the " +
       "per-task timeline and tail the SSE log stream live.",
   },
+  // ---- Migrations ----
+  {
+    route: "/migrations",
+    title: "Migrations — move data between systems",
+    description:
+      "Declare a source connection + table → destination connection + table → column map, then pick " +
+      "full or incremental mode. Long runs go through the Asynq worker and surface progress via a " +
+      "bookmarkable /jobs/{id} page. Incremental mode persists watermarks to S3 so re-runs pick up " +
+      "where they left off. Running a migration requires the admin role — it talks to customer " +
+      "warehouses with stored credentials.",
+  },
   // ---- Quality checks ----
   {
     route: "/checks",
@@ -110,6 +151,25 @@ const STEPS: Step[] = [
       "Row count thresholds, freshness windows, null-rate, uniqueness, custom SQL. Declare once, run " +
       "on a schedule or before downstream tasks. Failed checks raise alerts through the channels " +
       "configured under Alerts. Each check has a history view with a line chart so you spot trends.",
+  },
+  // ---- Contracts ----
+  {
+    route: "/contracts",
+    title: "Data contracts — producer ↔ consumer SLAs",
+    description:
+      "A contract is the producing team's written promise about a table: expected columns + types, " +
+      "max staleness, max null fraction per column. The contract runner re-checks every 5 minutes " +
+      "and emits a deduped breach event the moment reality drifts. Different from quality checks: " +
+      "a check asserts one rule; a contract bundles the whole SLA.",
+  },
+  {
+    route: "/contracts",
+    element: '[data-tour="contracts-evaluate"]',
+    side: "left",
+    title: "Evaluate all — on-demand contract run",
+    description:
+      "Click this to re-run every active contract right now rather than waiting for the next 5-minute " +
+      "tick. Useful right after a deploy, before a stakeholder demo, or when investigating an alert.",
   },
   // ---- Alerts ----
   {
@@ -127,7 +187,28 @@ const STEPS: Step[] = [
     description:
       "Attribute-based access rules layered on top of workspace roles. Examples: 'only the finance " +
       "group can read tag:class:pii columns', or 'deny everyone delete on tag:critical assets'. Deny " +
-      "rules override allow. Every read and write checks against this table before the storage layer.",
+      "rules override allow. Every /v1/* endpoint runs through this engine before touching data, " +
+      "and the policy table itself is admin-only — you can't escalate by editing your own rules.",
+  },
+  // ---- Certifications ----
+  {
+    route: "/certifications",
+    title: "Certifications — the human trust badge",
+    description:
+      "A steward proposes an asset for certification (this is the canonical orders table, the gold " +
+      "customer mart, etc.). An admin reviews here and approves or rejects; anyone with the certify " +
+      "role can revoke later. Certified assets surface a badge across the catalog so analysts stop " +
+      "guessing which of fifty 'users' tables is the one to use.",
+  },
+  // ---- Cost ----
+  {
+    route: "/cost",
+    title: "Cost — where the tenant spend is going",
+    description:
+      "Every billable call — LLM tokens, warehouse seconds, S3 bytes — lands in cost_records. This " +
+      "page rolls them up by feature (AI completions / warehouse queries / storage) with a daily " +
+      "stacked bar. Set a tenant budget with warn + hard thresholds and the watcher fires alerts " +
+      "through the notify dispatcher the moment you cross them. Editing budgets is admin-only.",
   },
   {
     route: "/glossary",
@@ -183,18 +264,30 @@ const STEPS: Step[] = [
     route: "/connections",
     title: "Connections — your datasources",
     description:
-      "Wire Postgres, Snowflake, BigQuery, and more here. Credentials are sealed with AES-256-GCM " +
-      "before they touch disk; Plowered itself can't read them, only present them to the connector at " +
-      "runtime. Each connection ships with Test (validates creds), Crawl (populates the catalog), " +
-      "and Classify (auto-tags PII / PHI columns).",
+      "Wire Postgres, Snowflake, Redshift, MongoDB, DynamoDB, Athena, or BigQuery here. Credentials " +
+      "are sealed with AES-256-GCM before they touch disk; Plowered itself can't read them, only " +
+      "present them to the connector at runtime. Each connection ships with Test (validates creds), " +
+      "Crawl (populates the catalog), and Classify (auto-tags PII / PHI columns).",
+  },
+  {
+    route: "/connections",
+    element: '[data-tour="connections-new"]',
+    side: "left",
+    title: "New connection — start with a Test",
+    description:
+      "Opens a wizard for the chosen source type. The wizard runs the driver's handshake before " +
+      "letting you Save, so a wrong password never lands in the vault. Only admins see this button — " +
+      "connections hold credentials, so write access is gated on the admin role.",
   },
   {
     route: "/team",
     title: "Team — invite teammates",
     description:
-      "Invite by email with a role (viewer / editor / steward / admin). 7-day single-use invitation " +
-      "links. Manage pending invites, change roles, remove members. Self-removal is blocked at the " +
-      "API so an admin can't accidentally lock themselves out.",
+      "Invite by email with a role (viewer / editor / steward / admin / super_admin). 7-day " +
+      "single-use links. Roles map directly to the verb matrix the policy engine enforces on every " +
+      "endpoint — viewer = read only; editor adds edit / propose / run; steward also certifies; " +
+      "admin reaches credential + billing surfaces; super_admin alone can purge the recycle bin. " +
+      "Self-removal is blocked at the API so an admin can't accidentally lock themselves out.",
   },
   {
     route: "/settings/ai",
@@ -271,7 +364,7 @@ export function ProductTour() {
           finish();
         } else {
           stepIndex.current += 1;
-          showStep(stepIndex.current);
+          void showStep(stepIndex.current);
         }
       }, AUTO_ADVANCE_MS);
     };
@@ -319,52 +412,83 @@ export function ProductTour() {
       });
     };
 
-    const showStep = (i: number) => {
+    // waitForElement polls until the spotlight target lands in the DOM
+    // (or the 3s budget runs out). Necessary because Next.js client
+    // navigations are async — the destination page mounts as its
+    // useQueries settle, and a fixed timeout is brittle. With no
+    // selector we wait one frame so the route swap paints first.
+    const waitForElement = (selector: string | undefined): Promise<void> => {
+      return new Promise((resolve) => {
+        if (!selector) {
+          setTimeout(resolve, 80);
+          return;
+        }
+        if (document.querySelector(selector)) {
+          resolve();
+          return;
+        }
+        const start = Date.now();
+        const tick = () => {
+          if (document.querySelector(selector)) {
+            resolve();
+            return;
+          }
+          if (Date.now() - start > 3000) {
+            // Fall back to centered popover after the budget; better
+            // than freezing the tour on a slow page.
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    };
+
+    const showStep = async (i: number) => {
       if (i < 0 || i >= STEPS.length) return;
       const step = STEPS[i];
       stepIndex.current = i;
       clearAdvance();
 
-      const render = () => {
-        // driver.js v1's highlight() shows one step; we manage
-        // next/prev/close ourselves so we can also route between
-        // pages and pre-load the next surface.
-        driverRef.current?.highlight({
-          element: step.element,
-          popover: {
-            title: step.title,
-            description: step.description,
-            side: step.side,
-            showButtons: ["next", "previous", "close"],
-            progressText: `Step ${i + 1} of ${STEPS.length}`,
-            onNextClick: () => {
-              if (i >= STEPS.length - 1) {
-                finish();
-              } else {
-                showStep(i + 1);
-              }
-            },
-            onPrevClick: () => {
-              if (i > 0) showStep(i - 1);
-            },
-            onCloseClick: finish,
-          },
-        });
-        // driver.js renders synchronously; decorate on the next tick.
-        requestAnimationFrame(() => {
-          decoratePopover();
-          armAdvance();
-        });
-      };
-
+      // Route to the destination page (if any) BEFORE asking driver.js
+      // to highlight. router.push is fire-and-forget; the DOM-ready
+      // signal comes from waitForElement below, not from awaiting
+      // router.push (Next.js' App Router push doesn't return a Promise
+      // we can rely on for "page mounted").
       if (step.route && step.route !== window.location.pathname) {
         router.push(step.route);
-        // Give Next.js a beat to mount the destination page before
-        // we try to query its DOM for the spotlight target.
-        setTimeout(render, 700);
-      } else {
-        render();
       }
+      await waitForElement(step.element);
+
+      driverRef.current?.highlight({
+        element: step.element,
+        popover: {
+          title: step.title,
+          description: step.description,
+          side: step.side,
+          showButtons: ["next", "previous", "close"],
+          progressText: `Step ${i + 1} of ${STEPS.length}`,
+          onNextClick: () => {
+            if (i >= STEPS.length - 1) {
+              finish();
+            } else {
+              void showStep(i + 1);
+            }
+          },
+          onPrevClick: () => {
+            if (i > 0) void showStep(i - 1);
+          },
+          onCloseClick: finish,
+        },
+      });
+      // driver.js renders synchronously; decorate on the next tick so
+      // the progress bar + Skip button land on the freshly painted
+      // popover, not the previous one.
+      requestAnimationFrame(() => {
+        decoratePopover();
+        armAdvance();
+      });
     };
 
     const d = driver({
@@ -388,7 +512,7 @@ export function ProductTour() {
     window.__plowered_tour = () => {
       completedRef.current = false;
       stepIndex.current = 0;
-      showStep(0);
+      void showStep(0);
     };
 
     return () => {

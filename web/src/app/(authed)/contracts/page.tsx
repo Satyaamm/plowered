@@ -14,6 +14,7 @@ import {
 } from "@fluentui/react-components";
 import { PlayRegular, BeakerRegular } from "@fluentui/react-icons";
 import { PageHeader } from "@/components/page-header";
+import { PageIntro } from "@/components/page-intro";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import {
   Breach,
@@ -57,14 +58,27 @@ export default function ContractsPage() {
         subtitle="Producer-declared guarantees (schema, freshness, null fractions) the platform continuously checks against asset profiles. Breaches route through the notify dispatcher."
         crumbs={[{ label: "Home", href: "/" }, { label: "Contracts" }]}
         actions={
-          <Button
-            appearance="primary"
-            icon={<BeakerRegular />}
-            onClick={() => evalAll.mutate()}
-            disabled={evalAll.isPending}
-          >
-            {evalAll.isPending ? "Evaluating…" : "Evaluate all"}
-          </Button>
+          <>
+            <PageIntro
+              title="What are data contracts?"
+              body="A contract is a written promise from the team that produces a table to everyone who consumes it: what columns will exist, how fresh the data will be, how many nulls are acceptable. The platform re-checks every 5 minutes and alerts the producer the moment reality drifts from the promise — before consumers notice."
+              bullets={[
+                "Catches silent breakage in marts, ML feature tables, and customer-facing assets before stakeholders do.",
+                "Routes breaches through the notify dispatcher (Slack / email / webhook) using the rules you already set up.",
+                "Different from quality checks: a check asserts one thing; a contract is the full SLA bundled together.",
+              ]}
+              cta='Get started: open any asset → Overview tab → Contract panel. Or hit "Evaluate all" to re-run every contract right now.'
+            />
+            <Button
+              appearance="primary"
+              icon={<BeakerRegular />}
+              onClick={() => evalAll.mutate()}
+              disabled={evalAll.isPending}
+              data-tour="contracts-evaluate"
+            >
+              {evalAll.isPending ? "Evaluating…" : "Evaluate all"}
+            </Button>
+          </>
         }
       />
 

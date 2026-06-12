@@ -18,6 +18,7 @@ import { useChannels, useDeliveries, useNotifyRules } from "@/lib/hooks";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { PageHeader } from "@/components/page-header";
+import { PageIntro } from "@/components/page-intro";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "24px" },
@@ -38,7 +39,21 @@ export default function AlertsPage() {
 
   return (
     <div className={styles.root}>
-      <PageHeader crumbs={[{ label: "Alerts" }]} />
+      <PageHeader
+        crumbs={[{ label: "Alerts" }]}
+        actions={
+          <PageIntro
+            title="What is Alerts?"
+            body="Alerts is the operational view of the notify dispatcher: the channels you send to, the rules that decide what fires, and every delivery the platform has attempted. Anything that fails a quality check, breaks a data contract, hits a cost threshold, or triggers a custom event lands here."
+            bullets={[
+              "Channels = destinations (Slack, email via Resend, webhook, log). Add them under Management → Notifications.",
+              "Rules = filters (which event types, which assets, minimum severity) that route matching events to a channel. One rule, one channel; many rules can fire on one event.",
+              "Deliveries = the audit log of every send. Idempotency keys mean a retried pipeline never double-pages on-call. Failed deliveries surface the last error so you can fix the channel.",
+            ]}
+            cta="Get started: configure a channel under /notifications/channels, then a rule that picks the events you care about. Failures appear in the Recent deliveries table within seconds."
+          />
+        }
+      />
 
       <div className={styles.twoCol}>
         <Card>

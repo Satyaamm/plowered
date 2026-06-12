@@ -16,7 +16,6 @@ import {
   Spinner,
   Subtitle1,
   Subtitle2,
-  Text,
   Textarea,
   makeStyles,
   tokens,
@@ -26,7 +25,18 @@ import {
   Sparkle20Regular,
 } from "@fluentui/react-icons";
 import { PageHeader } from "@/components/page-header";
-import { useAskGenerate, useAskRun, useConnections } from "@/lib/hooks";
+import { PageIntro } from "@/components/page-intro";
+import {
+  useAIProviders,
+  useAskGenerate,
+  useAskRun,
+  useConnections,
+} from "@/lib/hooks";
+
+// QUESTION_MAX caps the natural-language prompt sent to the LLM. Above
+// this the model becomes both expensive (tokens) and noisy (worse
+// schema grounding). The hard backend limit matches.
+const QUESTION_MAX = 500;
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "16px" },
@@ -37,14 +47,29 @@ const useStyles = makeStyles({
     padding: "16px",
     display: "flex",
     flexDirection: "column",
-    gap: "12px",
+    gap: "14px",
   },
-  inputRow: {
-    display: "grid",
-    gridTemplateColumns: "260px 1fr auto",
-    gap: "12px",
-    alignItems: "end",
+  // Vertical stack — each labeled field sits on its own row. Fluent's
+  // Field already renders label + control vertically; we just make sure
+  // the parent doesn't reflow horizontally.
+  fieldStack: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
   },
+  actionRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
+  },
+  counterRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "8px",
+  },
+  counter: { color: tokens.colorNeutralForeground3, fontSize: "12px" },
+  counterWarn: { color: tokens.colorPaletteRedForeground1, fontSize: "12px" },
   sqlBox: {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "13px",
@@ -90,12 +115,22 @@ const useStyles = makeStyles({
 export default function AskPage() {
   const styles = useStyles();
   const conns = useConnections();
+  const providers = useAIProviders();
   const [connectionId, setConnectionId] = useState<string>("");
   const [question, setQuestion] = useState<string>("");
 
   const generate = useAskGenerate();
   const executionId = generate.data?.execution_id ?? null;
   const run = useAskRun(executionId);
+
+  // Preflight: /ask is useless without a primary chat provider. Detect
+  // up-front so the user gets a clear "set this up first" message
+  // instead of clicking Draft SQL and being told the request failed.
+  const chatProvider = (providers.data ?? []).find(
+    (p) => p.capability === "chat" && p.is_primary,
+  );
+  const llmReady = !!chatProvider;
+  const llmLoading = providers.isLoading;
 
   // Only SQL-capable connections are valid targets. The backend will
   // reject document sources with a 400 — we filter client-side so the
@@ -105,9 +140,14 @@ export default function AskPage() {
       .includes(c.type),
   );
 
+  const trimmed = question.trim();
+  const charsUsed = question.length;
+  const charsOver = charsUsed > QUESTION_MAX;
+  const questionInvalid = trimmed.length === 0 || charsOver;
+
   const onGenerate = () => {
-    if (!connectionId || !question.trim()) return;
-    generate.mutate({ connection_id: connectionId, question });
+    if (!llmReady || !connectionId || questionInvalid) return;
+    generate.mutate({ connection_id: connectionId, question: trimmed });
   };
 
   return (
@@ -117,18 +157,48 @@ export default function AskPage() {
         subtitle="Ask a question in plain English. Plowered finds the relevant tables, drafts a SELECT, and waits for your go-ahead before running it."
         crumbs={[{ label: "Home", href: "/" }, { label: "Ask" }]}
         actions={
-          <Link href="/ask/history">
-            <Button>History</Button>
-          </Link>
+          <>
+            <PageIntro
+              title="What does Ask do?"
+              body="Ask is the platform's Text-to-SQL surface. Pick a connection, type a question in plain English, and the model drafts a read-only SELECT against the catalog of that source. Nothing runs on the warehouse until you click Run."
+              bullets={[
+                "Powered by your tenant's BYOM key — costs roll into /cost and your budget. No shared LLM.",
+                "SELECT-only guardrail: the platform refuses to execute INSERT / UPDATE / DELETE / DROP even if the model produces one.",
+                "Every question, generated SQL, token usage, and result row count is logged at /ask/history and audited.",
+              ]}
+              cta="Get started: configure a primary chat provider under Settings → AI providers, then pick a SQL connection here and ask a question."
+            />
+            <Link href="/ask/history">
+              <Button>History</Button>
+            </Link>
+          </>
         }
       />
+
+      {/* Preflight: no LLM provider configured. Block the form and
+          point at the setup page. Skipped while we're still loading the
+          providers list to avoid a flash. */}
+      {!llmLoading && !llmReady && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            No primary chat provider is configured. Set one up under{" "}
+            <Link href="/settings/ai" style={{ textDecoration: "underline" }}>
+              Settings → AI providers
+            </Link>{" "}
+            before using Ask — the page generates SQL via your tenant's
+            BYOM key.
+          </MessageBarBody>
+        </MessageBar>
+      )}
 
       <Card className={styles.panel}>
         <Subtitle1>Question</Subtitle1>
         <Caption1 className={styles.meta}>
-          The model writes a read-only SELECT. Nothing is executed until you click Run.
+          The model writes a read-only SELECT. Nothing is executed until you
+          click Run.
         </Caption1>
-        <div className={styles.inputRow}>
+
+        <div className={styles.fieldStack}>
           <Field label="Connection" required>
             <Dropdown
               value={
@@ -143,7 +213,9 @@ export default function AskPage() {
                     ? "No SQL connections yet"
                     : "Pick a connection"
               }
-              disabled={conns.isLoading || sqlConnections.length === 0}
+              disabled={
+                conns.isLoading || sqlConnections.length === 0 || !llmReady
+              }
             >
               {sqlConnections.map((c) => (
                 <Option key={c.id} value={c.id} text={c.name}>
@@ -155,14 +227,46 @@ export default function AskPage() {
               ))}
             </Dropdown>
           </Field>
-          <Field label="Question" required>
+
+          <Field
+            label="Question"
+            required
+            validationState={charsOver ? "error" : "none"}
+            validationMessage={
+              charsOver
+                ? `Trim to ${QUESTION_MAX} characters or fewer.`
+                : undefined
+            }
+          >
             <Textarea
               value={question}
-              onChange={(_, d) => setQuestion(d.value)}
+              onChange={(_, d) => {
+                // Hard-cap at the limit so paste of a giant prompt
+                // can't sneak through. The validation message still
+                // fires while the user is mid-edit at the cap.
+                const v = d.value.slice(0, QUESTION_MAX + 1);
+                setQuestion(v);
+              }}
               placeholder="How many active customers signed up last month?"
-              rows={2}
+              rows={4}
+              maxLength={QUESTION_MAX + 1}
+              disabled={!llmReady}
             />
           </Field>
+
+          <div className={styles.counterRow}>
+            <Caption1 className={styles.meta}>
+              {llmReady && chatProvider
+                ? `Using ${chatProvider.name} (${chatProvider.model})`
+                : ""}
+            </Caption1>
+            <span className={charsOver ? styles.counterWarn : styles.counter}>
+              {charsUsed} / {QUESTION_MAX}
+            </span>
+          </div>
+        </div>
+
+        <div className={styles.actionRow}>
           <Button
             appearance="primary"
             icon={
@@ -173,7 +277,13 @@ export default function AskPage() {
               )
             }
             onClick={onGenerate}
-            disabled={!connectionId || !question.trim() || generate.isPending}
+            disabled={
+              !llmReady ||
+              !connectionId ||
+              questionInvalid ||
+              generate.isPending
+            }
+            data-tour="ask-draft"
           >
             {generate.isPending ? "Drafting…" : "Draft SQL"}
           </Button>
@@ -211,7 +321,7 @@ export default function AskPage() {
             </div>
           </div>
           <pre className={styles.sqlBox}>{generate.data.generated_sql}</pre>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <div className={styles.actionRow}>
             <Button
               appearance="primary"
               icon={

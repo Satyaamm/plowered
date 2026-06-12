@@ -33,7 +33,9 @@ import {
   DocumentBulletList24Regular,
   ChevronDoubleLeft20Regular,
   ChevronDoubleRight20Regular,
+  ChatHelp24Regular,
 } from "@fluentui/react-icons";
+import { useRole } from "@/lib/hooks";
 
 type Item = {
   label: string;
@@ -43,6 +45,10 @@ type Item = {
   // not every item needs a tour stop, but the ones the new-user
   // walkthrough highlights do.
   tour?: string;
+  // requireVerb hides the item unless the principal can perform the
+  // verb. Used for platform-operator-only surfaces like
+  // /admin/feedback. Tenant-scoped items leave this unset.
+  requireVerb?: "platform";
 };
 
 type Group = {
@@ -113,8 +119,18 @@ const GROUPS: Group[] = [
       { label: "Connections",  href: "/connections", icon: <Settings24Regular />, tour: "nav-connections" },
       { label: "Team",         href: "/team",        icon: <People24Regular />,   tour: "nav-team" },
       { label: "Identity",     href: "/identity",    icon: <Person24Regular /> },
-      { label: "AI providers", href: "/settings/ai", icon: <Sparkle24Regular />,  tour: "nav-ai" },
-      { label: "Account",      href: "/account",     icon: <Person24Regular /> },
+      { label: "AI providers",   href: "/settings/ai",           icon: <Sparkle24Regular />,  tour: "nav-ai" },
+      { label: "Vector stores",  href: "/settings/vectorstores", icon: <Sparkle24Regular />,  tour: "nav-vectorstores" },
+      { label: "Account",        href: "/account",               icon: <Person24Regular /> },
+    ],
+  },
+  // PLATFORM group — only rendered when the principal has the
+  // `platform` verb (the platform_admin role). Cross-tenant operator
+  // surfaces live here.
+  {
+    heading: "PLATFORM",
+    items: [
+      { label: "Feedback queue", href: "/admin/feedback", icon: <ChatHelp24Regular />, tour: "nav-feedback", requireVerb: "platform" },
     ],
   },
 ];
@@ -209,6 +225,16 @@ export function Sidebar({ appName }: { appName: string }) {
   const styles = useStyles();
   const path = usePathname() ?? "/";
   const [collapsed, setCollapsed] = useState(false);
+  const { can } = useRole();
+
+  // Filter items + collapse whole groups whose every item is hidden.
+  // Done client-side so the visibility decision lives in one place;
+  // the backend still gates each endpoint, so a hand-crafted URL gets
+  // a 403, not a leak.
+  const visibleGroups = GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((it) => !it.requireVerb || can(it.requireVerb)),
+  })).filter((g) => g.items.length > 0);
 
   return (
     <aside
@@ -223,7 +249,7 @@ export function Sidebar({ appName }: { appName: string }) {
       </div>
 
       <div className={styles.scroll}>
-        {GROUPS.map((g) => (
+        {visibleGroups.map((g) => (
           <div key={g.heading}>
             {!collapsed && (
               <Caption1 className={styles.groupHead} block>

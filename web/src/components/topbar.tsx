@@ -26,9 +26,11 @@ import {
   ChevronDown16Regular,
   CheckmarkCircle16Filled,
   SignOut20Regular,
+  ChatHelp20Regular,
 } from "@fluentui/react-icons";
 import { usePrincipal } from "@/lib/hooks";
 import { useLogout, useMyWorkspaces } from "@/lib/auth-client";
+import { FeedbackDrawer } from "@/components/feedback-drawer";
 
 const useStyles = makeStyles({
   root: {
@@ -116,6 +118,20 @@ const useStyles = makeStyles({
     fontWeight: 600,
     marginTop: "2px",
   },
+  feedbackBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "6px 10px",
+    borderRadius: "6px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground2,
+    color: tokens.colorNeutralForeground1,
+    fontSize: "13px",
+    fontWeight: 500,
+    cursor: "pointer",
+    ":hover": { backgroundColor: tokens.colorNeutralBackground3 },
+  },
 });
 
 export function Topbar() {
@@ -125,6 +141,7 @@ export function Topbar() {
   const workspaces = useMyWorkspaces();
   const logout = useLogout();
   const [query, setQuery] = useState("");
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const onSignOut = async () => {
     await logout.mutateAsync();
@@ -164,6 +181,20 @@ export function Topbar() {
       </div>
 
       <div className={styles.right}>
+        {/* Feedback button — reachable from every page. Drawer captures
+            page URL + UA so a bug report includes repro context. */}
+        <button
+          type="button"
+          className={styles.feedbackBtn}
+          onClick={() => setFeedbackOpen(true)}
+          title="Send feedback, report a bug, or request an enhancement"
+          aria-label="Send feedback"
+          data-tour="topbar-feedback"
+        >
+          <ChatHelp20Regular />
+          <span>Feedback</span>
+        </button>
+
         {/* Workspace switcher */}
         <Menu>
           <MenuTrigger disableButtonEnhancement>
@@ -314,6 +345,8 @@ export function Topbar() {
           </MenuPopover>
         </Menu>
       </div>
+
+      <FeedbackDrawer open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </header>
   );
 }

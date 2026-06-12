@@ -43,6 +43,7 @@ import {
   useClassifyConnection,
   useCrawlConnection,
   useDeleteConnection,
+  useRole,
   useTestConnection,
 } from "@/lib/hooks";
 import { useJob } from "@/lib/hooks/use-jobs";
@@ -90,6 +91,9 @@ export default function ConnectionsPage() {
   const del = useDeleteConnection();
   const crawl = useCrawlConnection();
   const classify = useClassifyConnection();
+  const { can } = useRole();
+  const canAdmin = can("admin");
+  const canDelete = can("delete");
   const classifyJobId =
     classify.data && "job_id" in classify.data ? classify.data.job_id : null;
   const classifyJob = useJob(classifyJobId);
@@ -158,7 +162,8 @@ export default function ConnectionsPage() {
               appearance="subtle"
               icon={<Play20Regular />}
               onClick={() => test.mutate(item.id)}
-              disabled={test.isPending}
+              disabled={test.isPending || !canAdmin}
+              title={canAdmin ? undefined : "Requires admin"}
             >
               Test
             </Button>
@@ -167,7 +172,8 @@ export default function ConnectionsPage() {
               appearance="subtle"
               icon={<Search20Regular />}
               onClick={() => crawl.mutate(item.id)}
-              disabled={crawl.isPending}
+              disabled={crawl.isPending || !canAdmin}
+              title={canAdmin ? undefined : "Requires admin"}
             >
               Crawl
             </Button>
@@ -187,12 +193,14 @@ export default function ConnectionsPage() {
                   >
                     Classify (sample data)
                   </MenuItem>
-                  <MenuItem
-                    icon={<Delete20Regular />}
-                    onClick={() => del.mutate(item.id)}
-                  >
-                    Delete
-                  </MenuItem>
+                  {canDelete && (
+                    <MenuItem
+                      icon={<Delete20Regular />}
+                      onClick={() => del.mutate(item.id)}
+                    >
+                      Delete
+                    </MenuItem>
+                  )}
                 </MenuList>
               </MenuPopover>
             </Menu>
@@ -200,7 +208,7 @@ export default function ConnectionsPage() {
         ),
       }),
     ],
-    [styles, test, del, crawl, router],
+    [styles, test, del, crawl, router, canAdmin, canDelete],
   );
 
   return (
@@ -214,13 +222,16 @@ export default function ConnectionsPage() {
             <Button icon={<ArrowSync20Regular />} onClick={() => list.refetch()}>
               Refresh
             </Button>
-            <Button
-              appearance="primary"
-              icon={<Add20Regular />}
-              onClick={() => setDrawerOpen(true)}
-            >
-              New connection
-            </Button>
+            {canAdmin && (
+              <Button
+                appearance="primary"
+                icon={<Add20Regular />}
+                onClick={() => setDrawerOpen(true)}
+                data-tour="connections-new"
+              >
+                New connection
+              </Button>
+            )}
           </>
         }
       />

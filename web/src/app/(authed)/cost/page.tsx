@@ -25,6 +25,7 @@ import {
   YAxis,
 } from "recharts";
 import { PageHeader } from "@/components/page-header";
+import { PageIntro } from "@/components/page-intro";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import { useCostSummary, useRecentCost } from "@/lib/hooks";
 
@@ -105,17 +106,29 @@ export default function CostPage() {
         subtitle="Per-tenant spend on AI completions + warehouse compute. Warehouse figures are wall-clock estimates; AI uses the published per-model token rates."
         crumbs={[{ label: "Home", href: "/" }, { label: "Cost" }]}
         actions={
-          <Dropdown
-            value={RANGE_OPTIONS.find((r) => r.value === range)?.label ?? ""}
-            selectedOptions={[String(range)]}
-            onOptionSelect={(_, d) => setRange(Number(d.optionValue) || 30)}
-          >
-            {RANGE_OPTIONS.map((r) => (
-              <Option key={r.value} value={String(r.value)} text={r.label}>
-                {r.label}
-              </Option>
-            ))}
-          </Dropdown>
+          <>
+            <PageIntro
+              title="What does cost tracking show me?"
+              body="Every billable call the platform makes — LLM tokens, warehouse seconds, S3 bytes — gets a cost row. This page rolls them up per feature so you can see where the spend is going before the invoice arrives."
+              bullets={[
+                "Avoid surprise bills: a runaway agent or a forgotten SELECT * shows up on this chart the same day, not at month-end.",
+                "Set budgets with warn (e.g. 80%) and hard (100%) thresholds — alerts fire through the notify dispatcher with 24-hour dedupe.",
+                "Numbers are estimates from a per-model price book; reconcile against your vendor billing exports for invoice-accuracy.",
+              ]}
+              cta="Get started: pick a time range. Then add a budget under Management → Cost budgets to start receiving threshold alerts."
+            />
+            <Dropdown
+              value={RANGE_OPTIONS.find((r) => r.value === range)?.label ?? ""}
+              selectedOptions={[String(range)]}
+              onOptionSelect={(_, d) => setRange(Number(d.optionValue) || 30)}
+            >
+              {RANGE_OPTIONS.map((r) => (
+                <Option key={r.value} value={String(r.value)} text={r.label}>
+                  {r.label}
+                </Option>
+              ))}
+            </Dropdown>
+          </>
         }
       />
 

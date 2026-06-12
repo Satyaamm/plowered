@@ -22,12 +22,14 @@ import {
 } from "@fluentui/react-components";
 import { CheckmarkRegular, DismissRegular } from "@fluentui/react-icons";
 import { PageHeader } from "@/components/page-header";
+import { PageIntro } from "@/components/page-intro";
 import { EmptyState, ErrorBanner, LoadingState } from "@/components/states";
 import {
   Certification,
   useApproveCertification,
   usePendingCertifications,
   useRejectCertification,
+  useRole,
 } from "@/lib/hooks";
 
 const useStyles = makeStyles({
@@ -54,7 +56,20 @@ export default function CertificationsQueuePage() {
         title="Certification review queue"
         subtitle="Approve or reject pending certification proposals. Approved assets surface a certified badge across the catalog."
         crumbs={[{ label: "Home", href: "/" }, { label: "Certifications" }]}
+        actions={
+          <PageIntro
+            title="What are certifications?"
+            body="A certification is a human trust badge on an asset: a steward says 'this is the canonical table for X, use this one.' An analyst searching for 'users' might find fifty matching tables — the certified one bubbles to the top with a badge so they don't have to guess."
+            bullets={[
+              "Stewards propose certification; admins approve or reject here in the queue; anyone with the certify role can revoke later.",
+              "Use it for the one official table per domain: the gold customer mart, the canonical orders fact, the blessed feature table.",
+              "Different from contracts: a contract enforces shape and freshness automatically; a certification is a human stamp that this asset is the one to trust.",
+            ]}
+            cta="Get started: open any asset → Overview tab → Propose certification. Approvers see the request here."
+          />
+        }
       />
+
       {q.isLoading && <LoadingState />}
       {q.error && <ErrorBanner error={q.error as Error} />}
       {q.data && q.data.length === 0 && (
@@ -74,6 +89,8 @@ function ProposalRow({ cert }: { cert: Certification }) {
   const styles = useStyles();
   const approve = useApproveCertification();
   const reject = useRejectCertification();
+  const { can } = useRole();
+  const canReview = can("certify");
   const [open, setOpen] = useState<"approve" | "reject" | null>(null);
   const [note, setNote] = useState("");
 
@@ -99,22 +116,28 @@ function ProposalRow({ cert }: { cert: Certification }) {
           <span style={{ fontSize: 13 }}>{cert.justification}</span>
         )}
       </div>
-      <div className={styles.actions}>
-        <Button
-          appearance="primary"
-          icon={<CheckmarkRegular />}
-          onClick={() => setOpen("approve")}
-        >
-          Approve
-        </Button>
-        <Button
-          appearance="subtle"
-          icon={<DismissRegular />}
-          onClick={() => setOpen("reject")}
-        >
-          Reject
-        </Button>
-      </div>
+      {canReview ? (
+        <div className={styles.actions}>
+          <Button
+            appearance="primary"
+            icon={<CheckmarkRegular />}
+            onClick={() => setOpen("approve")}
+          >
+            Approve
+          </Button>
+          <Button
+            appearance="subtle"
+            icon={<DismissRegular />}
+            onClick={() => setOpen("reject")}
+          >
+            Reject
+          </Button>
+        </div>
+      ) : (
+        <Caption1 className={styles.meta}>
+          Approval requires the steward or admin role.
+        </Caption1>
+      )}
       <Dialog open={open !== null} onOpenChange={(_, d) => !d.open && close()}>
         <DialogSurface>
           <DialogBody>
