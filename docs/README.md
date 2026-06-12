@@ -62,6 +62,30 @@ Grouped by tag — full request/response shapes live in the OpenAPI spec.
 - `POST /v1/checks/{id}:run`
 - `GET /v1/checks/{id}/runs`
 
+### contracts
+- `GET|POST|PATCH|DELETE /v1/contracts[/{id}]`
+- `GET /v1/assets/{id}/contract`, `PUT /v1/assets/{id}/contract`
+- `GET /v1/contracts/{id}/breaches`
+
+### certifications
+- `GET /v1/certifications?status=pending|approved|rejected|revoked`
+- `POST /v1/assets/{id}/certifications` — propose
+- `POST /v1/certifications/{id}:approve`, `:reject`, `:revoke`
+
+### cost
+- `GET /v1/cost/summary` (supports `?by_feature=1`)
+- `GET|POST|PATCH|DELETE /v1/cost/budgets[/{id}]`
+
+### notify
+- `GET|POST|PATCH|DELETE /v1/notify/channels[/{id}]`
+- `POST /v1/notify/channels/{id}:test`
+- `GET|POST|PATCH|DELETE /v1/notify/rules[/{id}]` (response enriched with `last_delivered_at`)
+- `GET /v1/notify/deliveries?rule_id=…`
+
+### migrations
+- `GET|POST /v1/migrations[/{id}]`
+- `POST /v1/migrations/{id}:run` (`mode=full|incremental`) — 202 + jobs ledger row
+
 ### governance
 - Glossary terms: `GET|POST|PATCH|DELETE /v1/glossary/terms[/{id}]`
 - Policies, access, audit log, recycle bin, legal holds, DSR.
@@ -85,7 +109,12 @@ Grouped by tag — full request/response shapes live in the OpenAPI spec.
 | Secrets | `internal/core/secrets` (AES-256-GCM sealed envelopes, Memory + Postgres backends) |
 | RBAC | `internal/core/policy` (5 roles + tag-based ABAC); HTTP gates use `principal.Roles` directly for now |
 | BYOM | `internal/core/aiprovider` + Postgres store + per-kind HTTP adapters |
-| Customer-DB adapters | `internal/adapters/{postgres,snowflake,bigquery}_source` |
+| Customer-DB adapters | `internal/adapters/{postgres,snowflake,redshift,mongodb,dynamodb,athena,bigquery}_source` + `bigquery_driver` |
+| Certifications | `internal/core/certification` (propose / approve / reject / revoke with `requireActiveProposal` guard) |
+| Contracts | `internal/core/contract` + `contract.Runner` (5-min tick with dedup'd breach hashes) |
+| Cost tracking | `internal/core/cost` (Recorder + price book + Watcher) |
+| Notify dispatcher | `internal/core/notify` (bounded async pool + Slack/Email/Webhook/Log channels) |
+| Object storage | `internal/blob` (`Put/Get/Delete/SignedURL` over S3 or FS) |
 
 ## Operating modes
 
@@ -101,13 +130,20 @@ Grouped by tag — full request/response shapes live in the OpenAPI spec.
 |---|---|---|
 | `PLOWERED_DATABASE_URL` | Postgres DSN | Yes for persistence |
 | `PLOWERED_REDIS_URL` | Asynq broker | Optional |
+| `PLOWERED_NATS_URL` | Outbox relay target | Optional |
 | `PLOWERED_SECRETS_MASTER_KEY` | AES key for the vault (base64-encoded 32 bytes) | Yes in prod |
 | `PLOWERED_WEB_BASE_URL` | Used in email links (verify, invite) | Recommended |
 | `PLOWERED_FROM_ADDRESS` | Outbound email From | Recommended |
-| `RESEND_API_KEY` | Resend transactional email | Optional (LogSender fallback) |
+| `RESEND_API_KEY` / `PLOWERED_RESEND_API_KEY` | Resend transactional email | Optional (LogSender fallback) |
 | `PLOWERED_ENV` | `production` enables fail-closed secrets | Optional |
 | `PLOWERED_SCHEDULER_DISABLED` | `1` disables in-process scheduler | Optional |
 | `PLOWERED_WORKER_CONCURRENCY` | Asynq worker concurrency | Optional |
+| `PLOWERED_OBJECT_STORE_KIND` | `s3` or `fs` for the mirror backend | Recommended |
+| `PLOWERED_OBJECT_STORE_BUCKET` / `_REGION` / `_PATH` | S3 / FS backend config | Recommended |
+| `PLOWERED_NOTIFY_WORKERS` / `_QUEUE_SIZE` | Notify dispatcher pool sizing | Optional (defaults 4 / 512) |
+| `PLOWERED_CONTRACT_TICK` | Contract runner cadence (default `5m`) | Optional |
+| `PLOWERED_COST_TICK` | Cost watcher cadence (default `5m`) | Optional |
+| `PLOWERED_AUTH_DEV` + `PLOWERED_AUTH_DEV_PRINCIPAL` | Dev-only auth bypass; principal JSON uses PascalCase (`ID`, `TenantID`, `Email`, `Roles`) | **Never** in production |
 
 ## Signup validation rules
 
@@ -152,8 +188,12 @@ enforce these in lockstep. If they drift, the server wins.
 
 ## Adding a new connector adapter
 
-1. New `internal/adapters/<source>_source/` package with `Tester` + `Crawler`.
-2. Register both in `cmd/plowered/main.go` (Tester) and
-   `cmd/plowered-worker/main.go` (Crawler).
-3. Enable the type in the web connection wizard and add a config form
-   section for it.
+1. New `internal/adapters/<source>_source/` package with `Tester` + `Crawler`
+   (+ `Executor` if the warehouse can run migrations / contract checks).
+2. Register Tester + Crawler in `cmd/plowered/main.go` and
+   `cmd/plowered-worker/main.go`.
+3. If it speaks SQL, register an `Executor` with `warehouse.MultiFactory`
+   so the migration runner + contract evaluator can target it.
+4. Enable the type in the web connection wizard, add a config form
+   section, and surface its scope via `useConnectionScope` so the
+   schema/table dropdowns populate from real catalog data.

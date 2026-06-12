@@ -3,7 +3,9 @@
 Every table in the platform, what it stores, and what it's there for.
 Authoritative SQL lives in `internal/storage/postgres/migrations/` and the
 migrations are applied in numeric order. Migrations 0001–0003 ship the
-core domain; 0004 adds the production / enterprise tier.
+core domain; 0004 adds the production / enterprise tier; 0005–0022
+extend the platform through orchestration v2, AI, cost, certifications,
+and contracts.
 
 | Migration | Theme |
 |---|---|
@@ -11,6 +13,13 @@ core domain; 0004 adds the production / enterprise tier.
 | 0002 | orchestration (pipelines, runs, task_runs, checks, notify, policy) |
 | 0003 | comprehensive audit (hash chain, http context) + recycle bin |
 | 0004 | enterprise: tenants, users, sessions, API keys, connections, GDPR, leases, outbox, encryption keys, feature flags, glossary, classifications |
+| 0005–0009 | email verification + password reset + invite tokens, login_attempts, jobs ledger, ai_providers, ai_query_executions |
+| 0010–0014 | column lineage extension, asset_embeddings v2, migration runs + watermarks, profile snapshots, asker history |
+| 0015–0018 | ownership workflow, classify proposals (two-phase), notify_deliveries timestamps, asset describe queue |
+| 0019 | certifications (proposed / approved / rejected / revoked workflow) |
+| 0020 | cost_records + cost_budgets (warn / hard thresholds, 24h dedupe state) |
+| 0021 | contracts + contract_breaches (with breach hash dedupe column) |
+| 0022 | notify_rule_deliveries materialised last_delivered_at + dispatcher metadata |
 
 ## Multi-tenancy is non-negotiable
 
@@ -154,6 +163,70 @@ historical.
 |---|---|
 | **asset_embeddings** | Vector embeddings for semantic search. `model` column lets multiple embedding models coexist. JSONB today; switch to `vector(N)` when pgvector lands. |
 | **column_lineage** | Column-level lineage edges (vs. asset-level in `edges`). transform = `identity | expression | aggregation`; `task_run_id` links the edge to the run that created it. |
+
+## Authentication extras (M5)
+
+| Table | Purpose |
+|---|---|
+| **email_verifications** | Single-use tokens for new-account email verification. `used_at` flips once. |
+| **password_resets** | Single-use tokens for forgot-password flow. `used_at` flips once; revokes every active session for the user. |
+| **invites** | Teammate invitation tokens. 7-day TTL. `accepted_at` flips once. |
+| **login_attempts** | Per-(tenant_id, email) failure log. Five fails in 15 min triggers `users.locked_at`. |
+
+## Jobs ledger + AI (M6)
+
+| Table | Purpose |
+|---|---|
+| **jobs** | Durable async-job ledger. status (`queued | running | succeeded | failed`), progress, result JSONB, error. Powers `/jobs/{id}`. |
+| **ai_providers** | Per-tenant BYOM configs (Anthropic / OpenAI / DeepSeek / openai-compatible). Key sealed at `urn:plowered:aiprovider:<id>`. `primary_for` array picks defaults for chat / embed. |
+| **ai_query_executions** | Every LLM round-trip. Prompt + completion (optionally mirrored to S3), model, input / output tokens, latency, cost feeds `cost.Recorder`. |
+
+## EDA + describe + ask (M6)
+
+| Table | Purpose |
+|---|---|
+| **profile_snapshots** | Per-asset chart-ready snapshots (row count, null %, top-k, histogram bins). Mirrored to S3 with deterministic keys for diff over time. |
+| **describe_queue** | Backlog for the column auto-describe agent. `status` walks `pending → running → succeeded | failed`. |
+| **asker_history** | `/ask` conversation history per user, with the resolved-asset references the agent cited. |
+
+## Migrations (M7)
+
+| Table | Purpose |
+|---|---|
+| **migration_runs** | Each schema migration execution. `mode = full | incremental`, source / target connection IDs, status, started / finished, watermark string. Async runs link to a `jobs.id`. |
+| **migration_watermarks** | Per-(source, target, table) checkpoint for incremental mode. Mirrored to S3 by the runner. |
+
+## Two-phase classify (M7)
+
+| Table | Purpose |
+|---|---|
+| **classify_proposals** | Sampled-column → proposed-tag rows from the classify wizard. Operator accepts / rejects per column; only accepted rows are written into `data_classifications`. |
+
+## Certifications (M8 — migration 0019)
+
+| Table | Purpose |
+|---|---|
+| **certifications** | Asset certification workflow. `status = proposed | approved | rejected | revoked`, proposer / approver / rejecter, reason, link to the proposal that became the latest active row. `requireActiveProposal` guard prevents double-resolution. |
+
+## Cost tracking (M8 — migration 0020)
+
+| Table | Purpose |
+|---|---|
+| **cost_records** | Append-only billing rows: `feature` (`ai | warehouse | storage`), `model`, `tokens_in`, `tokens_out`, `seconds`, `bytes`, `usd`. Rolled up by `cost.Watcher`. |
+| **cost_budgets** | Per-tenant USD budgets with `warn_threshold` + `hard_threshold` (fractions). `last_warn_at` / `last_hard_at` enforce 24h dedupe before re-firing. |
+
+## Data contracts (M8 — migration 0021)
+
+| Table | Purpose |
+|---|---|
+| **contracts** | Per-asset contract definition: `expected_columns` (name + type), `freshness_seconds`, `null_thresholds` (column → max fraction). Version bumped on every edit. |
+| **contract_breaches** | Each breach detected by `contract.Runner`. `hash = sha256(kind, observed)` powers dedupe so "still broken" doesn't refire on every tick. `resolved_at` flips when the next eval comes back clean. |
+
+## Notify enrichments (M8 — migration 0022)
+
+| Table | Purpose |
+|---|---|
+| **notify_rule_deliveries** | Materialised `last_delivered_at` per `(tenant_id, rule_id)` so the rules list can show recency without scanning `notify_deliveries`. Updated by the dispatcher after each successful send. |
 
 ---
 

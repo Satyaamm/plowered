@@ -4,7 +4,7 @@
 
 - Read `SECURITY.md` and `DESIGN.md`.
 - Discuss non-trivial changes in an issue first.
-- CI must pass: proto lint, `go vet`, `go test -race`, vulnerability scan.
+- CI must pass: `go vet`, `go test -race ./...`, `cd web && npx tsc --noEmit`, vulnerability scan.
 
 ## Coding norms
 
@@ -19,13 +19,25 @@ See `DESIGN.md` §coding-norms. Highlights:
 
 ## API changes
 
-- All public RPCs in `proto/plowered/v1/*.proto`.
-- Additive changes only on `v1`. Breaking goes in `v2`.
+- All public endpoints defined in `internal/api/http/openapi.yaml` (embedded via `go:embed`).
+- Additive changes only on `/v1/*`. Breaking goes in `/v2/*`.
+- Every new handler ships with the matching `useX` hook in `web/src/lib/hooks/` and a docs entry under `docs/README.md`.
 
 ## Security-sensitive PRs
 
-Touching authn/authz, storage, secrets, audit, or the LLM pipeline → request `security-review` label, two reviewers.
+Touching authn/authz, storage, secrets, audit, notify dispatcher (SSRF surface), or the LLM pipeline → request `security-review` label, two reviewers.
 
 ## Commits
 
-Conventional Commits: `feat(graph): add column-level lineage walker`. Squash on merge.
+Conventional Commits with a multi-section body grouping backend / frontend / tests / known limitations. Example:
+
+```
+feat(contract): periodic runner with dedup'd breach detection
+
+backend: contract.Runner ticks every 5m; emits ContractBreach events
+frontend: inline editor on asset Overview tab
+tests: …
+limitations: …
+```
+
+**No emojis** anywhere — commits, docs, code, chat. Squash on merge.

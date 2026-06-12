@@ -97,13 +97,13 @@
 
 ## API design rules
 
-1. Public surface defined in `proto/plowered/v1/` first.
-2. Breaking changes require a new package version (`v2`).
-3. Resource names follow AIP-122: `tenants/{tenant}/assets/{asset}`.
-4. gRPC canonical error codes only.
-5. Pagination follows AIP-158 (`page_token`).
-6. Filtering follows AIP-160 (CEL).
-7. Long-running ops follow AIP-151.
+1. Public surface defined as OpenAPI 3.1 in `internal/api/http/openapi.yaml`.
+2. Breaking changes require a new path prefix (`/v2/*`).
+3. Resource names: `/v1/tenants/{tenant}/assets/{asset}`.
+4. Errors: RFC 7807 problem details under `{type, title, detail, status}`.
+5. Pagination: `page_token` + `limit` query params, with `next_page_token` in responses.
+6. Filtering: typed query params; complex filters use CEL only where listed in the spec.
+7. Long-running ops: return `202 Accepted` + `{job_id}`; client polls `/v1/jobs/{id}`.
 
 ## Failure modes
 

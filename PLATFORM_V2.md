@@ -10,6 +10,17 @@ It supersedes overlapping sections in `ARCHITECTURE.md`,
 single subsystem they remain authoritative; where they conflict, this
 document wins.
 
+> **Shipped status (2026-05-20).** Catalog, orchestration, quality, AI,
+> RBAC, audit, recycle bin, legal holds, DSR, BYOM, MCP, and the M5 web
+> UI are all live. The six-session "complete everything" arc has added
+> **certifications, data contracts (with periodic `contract.Runner`),
+> per-feature cost tracking + budgets, async migrations (full +
+> incremental), notify dispatcher with Slack / Email / Webhook / Log
+> channels, and Mongo / Dynamo / Athena / BigQuery driver coverage.**
+> Production-grade items (OIDC SSO, MFA, SAML / SCIM, vendor billing
+> reconciliation, OTel traces, fault-injection, real-load testing) are
+> tracked under the production-hardening sprint in `ROADMAP.md`.
+
 ---
 
 ## 1. What Plowered does

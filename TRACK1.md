@@ -1,5 +1,14 @@
 # Track 1 — what's pitchable today
 
+> **Historical snapshot (Track 1, ~late-2025).** Plowered has shipped
+> Tracks 2 and 3 in full plus a six-session "complete everything" arc
+> (certifications, contracts, cost tracking, async migrations, notify
+> dispatcher, Mongo/Dynamo/Athena/BigQuery drivers). For the current
+> capability matrix, see [`README.md`](README.md) and
+> [`ROADMAP.md`](ROADMAP.md); for the demo script, see
+> [`RUN.md`](RUN.md). This file is preserved for the early-demo story.
+
+
 This document captures the demo state at the end of Track 1. If a
 prospective customer or investor asks "what does Plowered actually do",
 walk them through this script.

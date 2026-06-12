@@ -83,31 +83,45 @@ docker exec plowered-postgres psql -U plowered -d plowered -c \
 - **MinIO console**: <http://localhost:9001> (`minioadmin` / `minioadmin`).
 - **NATS monitor**: <http://localhost:8222/varz>
 
-## End-to-end demo (≤ 5 minutes)
+## End-to-end demo (≤ 10 minutes)
 
-The full Track 1 story, top to bottom:
+The full story, top to bottom:
 
 1. **Sign up** at `/signup`. Verify your email.
 2. **Add a connection** — Connections → New connection. Point it at any
    reachable Postgres (you can use the bundled one: host `postgres`,
    port `5432`, db `plowered`, user `plowered`, password `plowered`,
-   sslmode `disable`).
+   sslmode `disable`). Mongo / Dynamo / Athena / BigQuery / Snowflake /
+   Redshift all available from the same wizard.
 3. **Test connection** — health flips to `healthy`.
-4. **Crawl** — click Crawl. The async worker walks
-   `information_schema`, projects schemas + tables + columns into the
-   catalog, and auto-tags PII / PHI / PCI / secret columns by name.
-5. **Catalog** → see your tables in a sortable Fluent DataGrid.
-   Drill into any table → Schema tab shows columns with classification
-   badges; Lineage tab shows the asset graph; Activity tab shows the
-   audit chain entries that touched this resource.
-6. **Compliance**:
-   - Issue a Legal hold on a resource type → try to delete →
-     HTTP 409 with `hold_id` in the body.
-   - File a DSR → 30-day SLA clock starts.
-   - Soft-delete anything → it lives in the recycle bin until a
-     super_admin purges.
-7. **Sign out** from the topbar account menu — session cookie is revoked
-   server-side, not just cleared client-side.
+4. **Crawl** — click Crawl. The async worker walks the source's schema,
+   projects schemas + tables + columns into the catalog, and auto-tags
+   PII / PHI / PCI / secret columns by name.
+5. **Classify** — Classify wizard runs sampled tagging, shows proposals
+   per column, and only writes the ones you approve.
+6. **Catalog** → see your tables in a sortable Fluent DataGrid. Drill
+   into any table → Schema, Lineage, Activity, Profile, Contract tabs.
+7. **Certify** the asset (Overview → Propose certification) → approve
+   from `/certifications`. The status badge updates in the catalog.
+8. **Contract** — open the inline Contract panel on the asset page,
+   declare `expected_columns` + a `freshness` window + null thresholds.
+   `contract.Runner` evaluates every 5 minutes; breaches surface in
+   `/alerts` and route through the notify dispatcher.
+9. **Quality checks** — `/checks` → New check. Pick the asset (its
+   columns auto-populate the picker), pick the check type, save. Runs
+   on schedule; failures route through the notify dispatcher.
+10. **Cost** — `/cost` shows per-feature roll-ups (ai / warehouse /
+    storage) and any budget breaches.
+11. **Ask** — `/ask` lets you query the catalog in natural language;
+    history persists per user.
+12. **Compliance**:
+    - Issue a Legal hold on a resource type → try to delete → HTTP 409
+      with `hold_id` in the body.
+    - File a DSR → 30-day SLA clock starts.
+    - Soft-delete anything → it lives in the recycle bin until a
+      super_admin purges.
+13. **Sign out** from the topbar account menu — session cookie is
+    revoked server-side, not just cleared client-side.
 
 ## Compliance gates — exposed at the API
 
@@ -183,6 +197,30 @@ docker compose down -v             # nukes Postgres / Redis / NATS / MinIO state
    (catalog +      (Asynq queue + (outbox bus  (audit / log  (pipeline / quality /
     audit + secrets)  idempotency)   + JetStream) archive)    crawler jobs)
 ```
+
+## Environment variables — quick reference
+
+| Variable | Purpose |
+|---|---|
+| `PLOWERED_DATABASE_URL` | Postgres DSN. Unset → memory mode (no persistence, no async). |
+| `PLOWERED_REDIS_URL` | Redis URL. Unset → in-process sync enqueuer. |
+| `PLOWERED_NATS_URL` | NATS URL for the outbox relay. Unset → outbox rows never drain. |
+| `PLOWERED_SECRETS_MASTER_KEY` | 32-byte base64; seals the AES-256-GCM secrets vault. |
+| `PLOWERED_WEB_BASE_URL` | Used in verification / reset / invite links. |
+| `PLOWERED_RESEND_API_KEY` | Optional Resend key for email delivery. |
+| `PLOWERED_EMAIL_FROM` | `Name <addr@domain>` used by the Resend sender. |
+| `PLOWERED_AUTH_DEV_PRINCIPAL` | JSON `{"ID","TenantID","Email","Roles"}` — bypasses auth for local curl. Honoured only when `PLOWERED_AUTH_DEV=true`. |
+| `PLOWERED_AUTH_DEV` | `true` to enable the dev principal path. **Never** set in production. |
+| `PLOWERED_JWT_HS256_SECRET` | Symmetric session-signing secret. |
+| `PLOWERED_JWT_RS256_PRIVATE_KEY` / `_PUBLIC_KEY` | Optional RSA keys for asymmetric sessions. |
+| `PLOWERED_OBJECT_STORE_KIND` | `s3` or `fs`. |
+| `PLOWERED_OBJECT_STORE_BUCKET` | S3 bucket for profile / AI / DSR mirrors. |
+| `PLOWERED_OBJECT_STORE_REGION` | AWS region for the S3 backend. |
+| `PLOWERED_OBJECT_STORE_PATH` | Local directory for the FS backend (dev). |
+| `PLOWERED_NOTIFY_WORKERS` | Notify dispatcher worker count. Defaults to 4. |
+| `PLOWERED_NOTIFY_QUEUE_SIZE` | Bounded queue size. Defaults to 512. |
+| `PLOWERED_CONTRACT_TICK` | Interval between contract-runner ticks. Defaults to `5m`. |
+| `PLOWERED_COST_TICK` | Interval between cost-watcher rollups. Defaults to `5m`. |
 
 ## Without Docker
 

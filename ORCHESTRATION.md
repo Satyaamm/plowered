@@ -107,9 +107,12 @@ Three guarantees:
    consumers don't back-pressure faster ones).
 3. **Fan-out** — one event can trigger N notifications across M channels.
 
-Channels are pluggable behind an interface. Built-ins for v0:
-`channel:webhook` and `channel:log`. Email/SMS/etc. plug in as
-sub-packages of `pkg/notify`.
+Channels are pluggable behind an interface. Built-ins today:
+`channel:webhook` (SSRF-guarded), `channel:log`, `channel:slack`,
+`channel:email` (Resend). All four route through a bounded async worker
+pool (`PLOWERED_NOTIFY_WORKERS` / `_QUEUE_SIZE`) with an inline fallback
+on full-queue. `last_delivered_at` is materialised per rule on every
+successful send.
 
 ## 5. Lineage integration
 
@@ -169,24 +172,35 @@ typed `EventContext`.
 
 ## 8. RBAC
 
-Two-tier model (the same one already documented in `SECURITY.md` §3, now
-*enforced*):
+Two-tier model — workspace **roles** + per-resource **ABAC rules**.
 
-1. **Workspace roles**: `viewer`, `editor`, `steward`, `admin`. Set via
-   workspace membership.
-2. **Per-asset / per-pipeline policies**: ABAC expressions evaluated at
-   query time. `policies.where` is a small CEL-style expression language
-   (subset for v0):
-   - `principal.roles.has("admin")` — role check
-   - `asset.tags.has("public")` — tag check
-   - `principal.tenant_id == asset.tenant_id` — implicit, always required
-   - `&&`, `||`, `!`
+1. **Workspace roles**: `viewer`, `editor`, `steward`, `admin`,
+   `super_admin`. Assigned via tenant membership. The role → verb table
+   lives in `internal/core/policy/policy.go` and is mirrored on the
+   frontend in `web/src/lib/hooks/use-role.ts`.
+2. **Per-resource rules**: rows in `policy_rules` consulted by the
+   engine after role grants. Conditions supported today:
+   - `principal.role`
+   - `principal.group`
+   - `resource.tag`
+   - `resource.owner=self`
 
-Verbs: `read | edit | propose | certify | delete | run | admin`.
+   Effect can be `allow` or `deny`. **Deny wins.**
 
-Enforcement happens in the storage layer via a `policy.Authorizer` injected
-into every Service. Handlers cannot bypass authz because they never touch
-SQL directly.
+Verbs: `read | edit | propose | certify | delete | run | admin | purge`
+(`purge` is super_admin-only and permanently removes a recycle-bin
+tombstone).
+
+Enforcement happens at the **HTTP handler** layer. Every gated handler
+calls `gate(w, r, authz, verb, resourceType)` from
+`internal/api/http/authz.go` immediately after `mustTenant`; on deny the
+helper writes `403` with the engine's reason string. The policy engine
+is built once in `NewMux` from the registered `policy.RuleRepo` and
+threaded into every handler family. Coverage is verified by
+`internal/api/http/rbac_test.go`, which asserts the expected deny / allow
+for every role across one representative mutating endpoint per family.
+
+The full endpoint coverage table lives in `SECURITY.md` § Authorization.
 
 ## 9. Audit log
 
@@ -232,15 +246,73 @@ These complement the Loamy brand palette and ship as Fluent UI tokens.
 | Lineage write (per task) | < 50ms p99 |
 | /v1/runs?status=running list | < 100ms p99 |
 
-## 12. Roadmap inside this layer
+## 12. Data contracts (M8)
 
+Beyond per-asset quality checks, contracts express the producer's
+*promise* about an asset's shape and freshness — and the consumer's
+right to be alerted the moment it's violated.
+
+A `contracts` row carries:
+
+- `expected_columns` — `[{name, type}]`. A missing column or type drift
+  is a breach.
+- `freshness_seconds` — the asset's most-recent timestamp must be no
+  older than this when `contract.Runner` checks.
+- `null_thresholds` — `{column: max_fraction}`. The latest profile
+  snapshot drives the comparison.
+
+`contract.Runner` ticks every `PLOWERED_CONTRACT_TICK` (default 5m),
+walks every asset with a contract, and emits `ContractBreach` events
+keyed by `hash = sha256(kind, observed)`. The dedupe table
+(`contract_breaches`) ensures "still broken" doesn't refire — the breach
+only re-emits when the observed fingerprint changes.
+
+The inline contract editor lives on the asset Overview tab; the
+admin-wide queue is at `/contracts`. Every breach flows through the
+notify dispatcher.
+
+## 13. Cost tracking (M8)
+
+`cost.Recorder` writes a `cost_records` row for every billable call (LLM
+tokens, warehouse seconds, S3 bytes). `cost.Watcher` rolls them up
+against per-tenant `cost_budgets` and fires `CheckFailed` events at warn
++ hard thresholds with 24h dedupe.
+
+The `/cost` page calls `GET /v1/cost/summary?by_feature=1` and renders
+ai / warehouse / storage breakdowns alongside any budget alerts.
+
+## 14. Certifications (M8)
+
+A separate workflow from data contracts: certifications express
+*human-verified trust* in an asset. Stewards `propose` certification,
+admins `approve` or `reject`, and any role with the `certify` verb can
+`revoke`.
+
+A `requireActiveProposal` guard prevents double-resolution (the
+proposal must still be the asset's `latest` row when the admin acts).
+The pending queue lives at `/certifications`.
+
+## 15. Roadmap inside this layer
+
+Shipped:
 | Slice | Scope |
 |---|---|
-| O1 | Pipeline + Task + Run domain types, in-memory stores, simple runner |
+| O1 | Pipeline + Task + Run domain types, in-memory stores, runner |
 | O2 | Quality checks (5 built-ins), CheckRun persistence |
-| O3 | Event bus + Notification dispatch (webhook + log channels) |
+| O3 | Event bus + Notification dispatch (webhook / log / slack / email) |
 | O4 | RBAC enforcement layer + audit log writer |
-| O5 | HTTP endpoints + UI pages |
+| O5 | HTTP endpoints + UI pages (`/pipelines`, `/runs`, `/checks`, …) |
 | O6 | Cron scheduler + retries + dead-letter handling |
 | O7 | Postgres persistence + migrations |
-| O8 | WebSocket real-time updates |
+| O8 | Async migrations (Asynq + incremental watermarks in S3) |
+| O9 | Contracts + `contract.Runner` |
+| O10 | Cost tracking + `cost.Watcher` + budgets |
+| O11 | Certifications workflow |
+
+Next:
+| Slice | Scope |
+|---|---|
+| O12 | Column-level lineage extractor mining `ai_query_executions` + pipeline SQL |
+| O13 | WebSocket real-time updates (replace 3s/30s poll) |
+| O14 | Workflow approvals generalised beyond certifications |
+| O15 | Anomaly detection over `profile_snapshots` |

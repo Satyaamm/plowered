@@ -4,7 +4,10 @@ Plowered uses AI on two sides: **inbound** (agents that fill gaps in the metadat
 
 ## Inbound — Context Agents
 
-All agents run queue-driven, never blocking user requests. Every generation is logged to the `evals` table.
+All agents run queue-driven, never blocking user requests. Every generation
+is logged to the `ai_query_executions` table (model, tokens, latency,
+prompt + completion mirrored to S3 with deterministic keys) and rolled up
+by `cost.Recorder` into the cost-tracking dashboard.
 
 ### DescriptionAgent
 | | |
@@ -80,6 +83,36 @@ type Provider interface {
 
 Implementations are hot-swappable per tenant.
 
+### Supported provider kinds
+
+Configured under `/settings/ai`. Backend dispatch lives in
+`internal/core/aiprovider/adapters.go`; the SDK-heavy ones (Bedrock,
+Vertex) live in `internal/adapters/{bedrock,vertex}_provider` so the
+named imports in `cmd/plowered/main.go` decide whether to compile them
+in.
+
+| Kind | Auth | Default base URL | Capabilities |
+|---|---|---|---|
+| `anthropic` | `x-api-key` | `api.anthropic.com` | chat |
+| `openai` | bearer | `api.openai.com` | chat + embed |
+| `gemini` | `?key=` (api key) | `generativelanguage.googleapis.com` | chat + embed |
+| `azure-openai` | `api-key` header | `<resource>.openai.azure.com` + `deployment` + `api_version` | chat + embed |
+| `bedrock` | AWS SigV4 (IAM chain or static creds JSON) | regional Bedrock Runtime endpoint | chat (Claude / Titan / Llama / Mistral / Cohere) + embed (Titan / Cohere) |
+| `vertex` | OAuth2 (ADC or service-account JSON) | `<location>-aiplatform.googleapis.com` | chat (Gemini / Claude on Vertex) + embed (textembedding-gecko / text-embedding-004) |
+| `cohere` | bearer | `api.cohere.ai` | chat + embed |
+| `voyage` | bearer | `api.voyageai.com` | embed only |
+| `mistral` / `groq` / `together` / `fireworks` / `perplexity` / `xai` / `deepseek` / `ollama` | bearer | per-vendor (see `OpenAICompatibleDefaultBaseURL`) | chat (most also embed via OpenAI-shape) |
+| `openai-compatible` | bearer | caller supplies `base_url` | LiteLLM, OpenRouter, vLLM, your own gateway |
+
+### Vector store backends
+
+Vector destinations (Pinecone, Weaviate, Qdrant, pgvector, memory) live
+under `internal/core/vectorstore` with the SDK-heavy adapters in
+`internal/adapters/{pinecone,weaviate,qdrant}_vectorstore`. They're a
+separate config surface from LLM providers because they store +
+retrieve vectors, not generate them — pairing them lets a tenant pick
+e.g. Voyage embeddings + Pinecone storage.
+
 ### Routing
 - Per-tenant default model
 - Per-agent override
@@ -137,27 +170,24 @@ Tracked metrics:
 
 ## AI-specific roadmap
 
-### M6 — v0 agents
-- DescriptionAgent
-- QualityAgent
-- Eval table populated
-- Review queue UI
-- Provider abstraction with one default + one fallback
+### Shipped (M6 + closeout)
+- DescriptionAgent (column auto-describe, transcripts mirrored to S3)
+- ProfileAgent (chart-ready snapshots)
+- AskerAgent (`/ask` natural-language Q&A with persisted history)
+- ClassifierAgent (two-phase preview + apply)
+- QualityAgent surfaces via `quality_checks` and the contract runner
+- BYOM provider abstraction (Anthropic / OpenAI / DeepSeek / openai-compatible) with primary-for chat + embed
+- Cost dashboard at `/cost` (per-feature roll-ups + tenant budgets with warn / hard thresholds)
+- Audit + cost log via `ai_query_executions` rolled up by `cost.Recorder`
 
-### M10 — agent expansion
-- MetricAgent
-- GlossaryAgent
-- ClassifierAgent
-- A/B prompt testing infrastructure
-- Embedding-based semantic search in the web UI
+### Next
+- **MetricAgent** — repeated SQL patterns → metric definitions
+- **GlossaryAgent** — candidate business terms grouped by domain
+- **EvalAgent** — closed-loop groundedness scoring on external agent traces
+- A/B prompt testing infrastructure (tenant split + eval comparison)
+- Embedding-based semantic search surfaced in the catalog UI
 
-### M12 — closed-loop
-- EvalAgent grounded in external agent traces
-- Auto-tagging proposals (PII, sensitivity) with reviewer queue
-- Auto-link suggestions for cross-system glossary unification
-- Cost dashboard
-
-### M14+ — advanced
+### Beyond
 - Multi-step agents that propose schema changes / refactors
 - Retrieval-augmented MCP responses (auto-attach lineage to `get_asset`)
 - Per-tenant fine-tuned reranker
