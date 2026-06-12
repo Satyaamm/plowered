@@ -54,6 +54,12 @@ volumes:
 services:
   # ---- Data planes ----
 
+  # Postgres + Redis run on NON-DEFAULT ports (6543 / 7479) because the
+  # VPS already has services on 5432 / 6379. Note these containers
+  # publish no host ports at all (private_net only), so there's no
+  # host-level collision either way — the custom ports remove all
+  # ambiguity for anyone debugging on the box.
+
   postgres:
     image: postgres:16-alpine
     restart: always
@@ -64,6 +70,7 @@ services:
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     command: >-
       postgres
+      -c port=${POSTGRES_PORT:-6543}
       -c shared_buffers=512MB
       -c effective_cache_size=1536MB
       -c max_connections=200
@@ -72,7 +79,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-plowered} -d ${POSTGRES_DB:-plowered}"]
+      test: ["CMD-SHELL", "pg_isready -p ${POSTGRES_PORT:-6543} -U ${POSTGRES_USER:-plowered} -d ${POSTGRES_DB:-plowered}"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -86,6 +93,7 @@ services:
     restart: always
     command: >-
       redis-server
+      --port ${REDIS_PORT:-7479}
       --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       --maxmemory 512mb
       --maxmemory-policy allkeys-lru
@@ -93,7 +101,7 @@ services:
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:-7479}", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -144,6 +152,25 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
 
+  minio-init:
+    # One-shot: creates the object-store bucket so the API's S3 client
+    # doesn't 404 on first Put. Exits after; compose gates the API on
+    # successful completion.
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing local/${PLOWERED_OBJECT_STORE_BUCKET:-plowered} &&
+        echo "minio-init: bucket ready"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    networks: [private_net]
+
   # ---- Application ----
 
   plowered-api:
@@ -154,15 +181,16 @@ services:
         VERSION: ${PLOWERED_VERSION:-prod}
     restart: always
     depends_on:
-      postgres: { condition: service_healthy }
-      redis:    { condition: service_healthy }
+      postgres:   { condition: service_healthy }
+      redis:      { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
     environment:
       PLOWERED_ENV: production
       PLOWERED_HTTP_ADDR: ":8080"
       # Bundled data planes. The API runs schema migrations against
       # this database at boot — no separate migrate step.
-      PLOWERED_DATABASE_URL: "postgres://${POSTGRES_USER:-plowered}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-plowered}?sslmode=disable"
-      PLOWERED_REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      PLOWERED_DATABASE_URL: "postgres://${POSTGRES_USER:-plowered}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT:-6543}/${POSTGRES_DB:-plowered}?sslmode=disable"
+      PLOWERED_REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:${REDIS_PORT:-7479}/0"
       PLOWERED_NATS_URL: "nats://nats:4222"
       PLOWERED_SECRETS_MASTER_KEY: ${PLOWERED_SECRETS_MASTER_KEY:?PLOWERED_SECRETS_MASTER_KEY must be set}
       PLOWERED_JWT_HS256_SECRET: ${PLOWERED_JWT_HS256_SECRET:?PLOWERED_JWT_HS256_SECRET must be set}
@@ -192,6 +220,10 @@ services:
       PLOWERED_S3_PATH_STYLE: "1"
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      # Hardening + limits
+      PLOWERED_MAX_BODY_BYTES: ${PLOWERED_MAX_BODY_BYTES:-2097152}
+      PLOWERED_RATE_LIMIT_PER_SECOND: ${PLOWERED_RATE_LIMIT_PER_SECOND:-50}
+      PLOWERED_RATE_LIMIT_BURST: ${PLOWERED_RATE_LIMIT_BURST:-100}
       PLOWERED_LOG_LEVEL: ${PLOWERED_LOG_LEVEL:-info}
     healthcheck:
       # distroless ships no shell/curl; restart policy + nginx upstream
@@ -218,8 +250,8 @@ services:
     environment:
       # Worker shares the API's data-plane env; keep in lockstep.
       PLOWERED_ENV: production
-      PLOWERED_DATABASE_URL: "postgres://${POSTGRES_USER:-plowered}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-plowered}?sslmode=disable"
-      PLOWERED_REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      PLOWERED_DATABASE_URL: "postgres://${POSTGRES_USER:-plowered}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT:-6543}/${POSTGRES_DB:-plowered}?sslmode=disable"
+      PLOWERED_REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:${REDIS_PORT:-7479}/0"
       PLOWERED_NATS_URL: "nats://nats:4222"
       PLOWERED_SECRETS_MASTER_KEY: ${PLOWERED_SECRETS_MASTER_KEY}
       PLOWERED_EMAIL_PROVIDER: ${PLOWERED_EMAIL_PROVIDER:-}
