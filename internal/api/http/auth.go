@@ -15,6 +15,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/auth"
 	"github.com/Satyaamm/plowered/internal/core/email"
 	"github.com/Satyaamm/plowered/internal/core/identity"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
 // AuthConfig is what the auth handlers need beyond the identity Repo +
@@ -27,6 +28,12 @@ type AuthConfig struct {
 	CookieName  string
 	CookieDomain string
 	CookieSecure bool
+	// CookieSameSite is "lax" (default), "strict", or "none".
+	// Cross-origin cookies (frontend + backend on different sites)
+	// require "none" + CookieSecure=true; sibling subdomains under
+	// one registrable domain can stay on "lax" with CookieDomain set
+	// to the parent (e.g. ".s2datasystems.in").
+	CookieSameSite string
 	Logger      *slog.Logger
 }
 
@@ -37,6 +44,11 @@ type AuthDeps struct {
 	Email    email.Sender
 	Config   AuthConfig
 	Auth     middleware.AuthConfig // for bearer-token fallback during /me
+	// Authorizer gates the team-management endpoints (members + invites)
+	// through the same policy.Engine as the rest of the platform. When
+	// nil the team handlers bypass authz — only acceptable in tests +
+	// memory mode where authz is also nil at the call site.
+	Authorizer policy.Authorizer
 }
 
 // authHandlers registers the auth routes. They MUST live outside the
@@ -595,7 +607,7 @@ func setSessionCookie(w http.ResponseWriter, cfg AuthConfig, s *identity.Session
 		Path:     "/",
 		Expires:  s.ExpiresAt,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: cookieSameSite(cfg.CookieSameSite),
 		Secure:   cfg.CookieSecure,
 	}
 	if cfg.CookieDomain != "" {
@@ -615,9 +627,26 @@ func clearSessionCookie(w http.ResponseWriter, cfg AuthConfig) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: cookieSameSite(cfg.CookieSameSite),
 		Secure:   cfg.CookieSecure,
 	})
+}
+
+// cookieSameSite maps the env-string config to the http enum. Unknown
+// or empty values fall back to Lax — the safe default for sibling
+// subdomains under one registrable domain. Cross-origin deployments
+// (frontend on a different site than the API) must explicitly set
+// "none" AND CookieSecure=true.
+func cookieSameSite(s string) http.SameSite {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "strict":
+		return http.SameSiteStrictMode
+	case "none":
+		return http.SameSiteNoneMode
+	case "lax", "":
+		return http.SameSiteLaxMode
+	}
+	return http.SameSiteLaxMode
 }
 
 // clientIP lives in audit_mw.go; reuse it.

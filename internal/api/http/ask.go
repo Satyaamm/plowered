@@ -9,6 +9,7 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
 	"github.com/Satyaamm/plowered/internal/core/asker"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
 // Asker is the small surface the HTTP layer needs.
@@ -18,18 +19,18 @@ type Asker interface {
 	History(ctx context.Context, tenantID string, limit int) ([]*asker.Execution, error)
 }
 
-func askHandlers(mux *http.ServeMux, a Asker) {
+func askHandlers(mux *http.ServeMux, a Asker, authz policy.Authorizer) {
 	if a == nil {
 		return
 	}
-	mux.HandleFunc("POST /v1/ai:ask", askGenerateHandler(a))
-	mux.HandleFunc("POST /v1/ai:ask/{id}/run", askRunHandler(a))
-	mux.HandleFunc("GET /v1/ai:ask/history", askHistoryHandler(a))
+	mux.HandleFunc("POST /v1/ai:ask", askGenerateHandler(a, authz))
+	mux.HandleFunc("POST /v1/ai:ask/{id}/run", askRunHandler(a, authz))
+	mux.HandleFunc("GET /v1/ai:ask/history", askHistoryHandler(a, authz))
 }
 
-func askHistoryHandler(a Asker) http.HandlerFunc {
+func askHistoryHandler(a Asker, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "ai_query")
 		if tenant == "" {
 			return
 		}
@@ -68,9 +69,11 @@ type askRequest struct {
 	Question     string `json:"question"`
 }
 
-func askGenerateHandler(a Asker) http.HandlerFunc {
+func askGenerateHandler(a Asker, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Drafting SQL burns LLM tokens + warehouse seconds on Run.
+		// VerbRun gates against the role matrix (editor+).
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRun, "ai_query")
 		if tenant == "" {
 			return
 		}
@@ -98,9 +101,9 @@ func askGenerateHandler(a Asker) http.HandlerFunc {
 	}
 }
 
-func askRunHandler(a Asker) http.HandlerFunc {
+func askRunHandler(a Asker, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRun, "ai_query")
 		if tenant == "" {
 			return
 		}

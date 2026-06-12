@@ -6,11 +6,15 @@ import (
 	"strings"
 
 	"github.com/Satyaamm/plowered/internal/core/graph"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/storage"
 )
 
-func createAssetHandler(store storage.Store) http.HandlerFunc {
+func createAssetHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbEdit, "asset") {
+			return
+		}
 		var a graph.Asset
 		if err := decodeJSON(r, &a); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
@@ -29,8 +33,11 @@ func createAssetHandler(store storage.Store) http.HandlerFunc {
 	}
 }
 
-func getAssetHandler(store storage.Store) http.HandlerFunc {
+func getAssetHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbRead, "asset") {
+			return
+		}
 		got, err := store.GetAsset(r.Context(), r.PathValue("id"))
 		if err != nil {
 			writeError(w, err)
@@ -40,8 +47,11 @@ func getAssetHandler(store storage.Store) http.HandlerFunc {
 	}
 }
 
-func getByQNHandler(store storage.Store) http.HandlerFunc {
+func getByQNHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbRead, "asset") {
+			return
+		}
 		qn := r.URL.Query().Get("qn")
 		if qn == "" {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", "qn required"})
@@ -56,8 +66,11 @@ func getByQNHandler(store storage.Store) http.HandlerFunc {
 	}
 }
 
-func updateAssetHandler(store storage.Store) http.HandlerFunc {
+func updateAssetHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbEdit, "asset") {
+			return
+		}
 		var a graph.Asset
 		if err := decodeJSON(r, &a); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})
@@ -87,8 +100,11 @@ func updateAssetHandler(store storage.Store) http.HandlerFunc {
 // Atomic at the per-asset row level (one transaction, one update).
 // Doesn't cover concurrent owner edits from two tabs — last write
 // wins, same as the rest of the catalog mutations.
-func updateAssetOwnersHandler(store storage.Store) http.HandlerFunc {
+func updateAssetOwnersHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbEdit, "asset") {
+			return
+		}
 		var body struct {
 			Owners []string `json:"owners"`
 		}
@@ -115,8 +131,11 @@ func updateAssetOwnersHandler(store storage.Store) http.HandlerFunc {
 	}
 }
 
-func deleteAssetHandler(store storage.Store) http.HandlerFunc {
+func deleteAssetHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbDelete, "asset") {
+			return
+		}
 		if err := store.DeleteAsset(r.Context(), r.PathValue("id")); err != nil {
 			writeError(w, err)
 			return
@@ -125,8 +144,11 @@ func deleteAssetHandler(store storage.Store) http.HandlerFunc {
 	}
 }
 
-func listAssetsHandler(store storage.Store) http.HandlerFunc {
+func listAssetsHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbRead, "asset") {
+			return
+		}
 		q := r.URL.Query()
 		opts := storage.ListAssetsOptions{
 			Type:      graph.AssetType(q.Get("type")),
@@ -162,8 +184,11 @@ type SearchHit struct {
 	Score float64      `json:"score"`
 }
 
-func searchAssetsHandler(store storage.Store) http.HandlerFunc {
+func searchAssetsHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbRead, "asset") {
+			return
+		}
 		var req SearchRequest
 		if err := decodeJSON(r, &req); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})

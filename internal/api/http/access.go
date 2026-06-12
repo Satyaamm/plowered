@@ -20,8 +20,8 @@ import (
 //
 // Response is a small envelope with two slices: visible and denied.
 // Each entry has the asset's qn + the engine's reason string.
-func accessHandlers(mux *http.ServeMux, cat storage.Store, rules policy.RuleStore, ids identity.Repo) {
-	mux.HandleFunc("POST /v1/access/preview", accessPreviewHandler(cat, rules, ids))
+func accessHandlers(mux *http.ServeMux, cat storage.Store, rules policy.RuleStore, ids identity.Repo, authz policy.Authorizer) {
+	mux.HandleFunc("POST /v1/access/preview", accessPreviewHandler(cat, rules, ids, authz))
 }
 
 type accessRequest struct {
@@ -56,9 +56,11 @@ type accessPrincipalView struct {
 	TenantID string   `json:"tenant_id"`
 }
 
-func accessPreviewHandler(cat storage.Store, rules policy.RuleStore, ids identity.Repo) http.HandlerFunc {
+func accessPreviewHandler(cat storage.Store, rules policy.RuleStore, ids identity.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Showing "what can user X see" leaks the access surface to the
+		// caller — admin-only.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "policy_rule")
 		if tenant == "" {
 			return
 		}

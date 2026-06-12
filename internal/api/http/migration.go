@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/Satyaamm/plowered/internal/core/migration"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/worker"
 )
 
@@ -24,21 +25,21 @@ type Migrator interface {
 	ListRuns(ctx context.Context, tenantID, planID string) ([]*migration.Run, error)
 }
 
-func migrationHandlers(mux *http.ServeMux, m Migrator, enq worker.Enqueuer) {
+func migrationHandlers(mux *http.ServeMux, m Migrator, enq worker.Enqueuer, authz policy.Authorizer) {
 	if m == nil {
 		return
 	}
-	mux.HandleFunc("GET    /v1/migrations",              listPlansHandler(m))
-	mux.HandleFunc("POST   /v1/migrations",              createPlanHandler(m))
-	mux.HandleFunc("GET    /v1/migrations/{id}",         getPlanHandler(m))
-	mux.HandleFunc("DELETE /v1/migrations/{id}",         deletePlanHandler(m))
-	mux.HandleFunc("POST   /v1/migrations/{id}/run",     runPlanHandler(m, enq))
-	mux.HandleFunc("GET    /v1/migrations/{id}/runs",    listMigRunsHandler(m))
+	mux.HandleFunc("GET    /v1/migrations",              listPlansHandler(m, authz))
+	mux.HandleFunc("POST   /v1/migrations",              createPlanHandler(m, authz))
+	mux.HandleFunc("GET    /v1/migrations/{id}",         getPlanHandler(m, authz))
+	mux.HandleFunc("DELETE /v1/migrations/{id}",         deletePlanHandler(m, authz))
+	mux.HandleFunc("POST   /v1/migrations/{id}/run",     runPlanHandler(m, enq, authz))
+	mux.HandleFunc("GET    /v1/migrations/{id}/runs",    listMigRunsHandler(m, authz))
 }
 
-func listPlansHandler(m Migrator) http.HandlerFunc {
+func listPlansHandler(m Migrator, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "migration")
 		if tenant == "" {
 			return
 		}
@@ -64,15 +65,11 @@ type createPlanReq struct {
 	WriteMode          migration.WriteMode    `json:"write_mode"`
 }
 
-func createPlanHandler(m Migrator) http.HandlerFunc {
+func createPlanHandler(m Migrator, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant, actor := gateTenantActorAndVerb(w, r, authz, policy.VerbEdit, "migration")
 		if tenant == "" {
 			return
-		}
-		actor := ""
-		if pr, ok := principalFrom(r); ok {
-			actor = pr.ID
 		}
 		var req createPlanReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -102,9 +99,9 @@ func createPlanHandler(m Migrator) http.HandlerFunc {
 	}
 }
 
-func getPlanHandler(m Migrator) http.HandlerFunc {
+func getPlanHandler(m Migrator, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "migration")
 		if tenant == "" {
 			return
 		}
@@ -117,9 +114,9 @@ func getPlanHandler(m Migrator) http.HandlerFunc {
 	}
 }
 
-func deletePlanHandler(m Migrator) http.HandlerFunc {
+func deletePlanHandler(m Migrator, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbDelete, "migration")
 		if tenant == "" {
 			return
 		}
@@ -136,9 +133,11 @@ func deletePlanHandler(m Migrator) http.HandlerFunc {
 // start polling /runs immediately. If no enqueuer is wired (the noop
 // fallback) the row is still created — useful for tests, less useful in
 // production, so main.go is expected to wire a real enqueuer.
-func runPlanHandler(m Migrator, enq worker.Enqueuer) http.HandlerFunc {
+func runPlanHandler(m Migrator, enq worker.Enqueuer, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Running a migration in prod touches customer warehouses with
+		// credentials — admin-only by default; per-asset rules can widen.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "migration")
 		if tenant == "" {
 			return
 		}
@@ -164,9 +163,9 @@ func runPlanHandler(m Migrator, enq worker.Enqueuer) http.HandlerFunc {
 	}
 }
 
-func listMigRunsHandler(m Migrator) http.HandlerFunc {
+func listMigRunsHandler(m Migrator, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "migration")
 		if tenant == "" {
 			return
 		}

@@ -22,7 +22,7 @@ func newTestServer(t *testing.T) (*httptest.Server, storage.Store) {
 		apihttp.RecoveryMW(nil),
 		apihttp.RequestIDMW(),
 		apihttp.AuthMW(func(token string) (auth.Principal, error) {
-			return auth.Principal{ID: "u1", TenantID: "t1", Email: "u@example.com"}, nil
+			return auth.Principal{ID: "u1", TenantID: "t1", Email: "u@example.com", Roles: []string{"admin"}}, nil
 		}, "/healthz"),
 		apihttp.TenantMW("/healthz"),
 	}
@@ -119,7 +119,7 @@ func TestAuthRejectsMissingHeader(t *testing.T) {
 	store := memory.New()
 	h := apihttp.Chain(apihttp.Mux(store),
 		apihttp.AuthMW(func(_ string) (auth.Principal, error) {
-			return auth.Principal{ID: "u1", TenantID: "t1"}, nil
+			return auth.Principal{ID: "u1", TenantID: "t1", Roles: []string{"admin"}}, nil
 		}),
 		apihttp.TenantMW(),
 	)

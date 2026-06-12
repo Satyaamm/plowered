@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Satyaamm/plowered/internal/core/glossary"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
 // glossaryHandlers registers term CRUD + assignment endpoints. Routes:
@@ -18,16 +19,16 @@ import (
 //	DELETE /v1/glossary/terms/{id}/assignments/{assetId}
 //	GET    /v1/glossary/terms/{id}/assets           — assets linked
 //	GET    /v1/assets/{id}/terms                    — terms linked
-func glossaryHandlers(mux *http.ServeMux, repo glossary.Repo) {
-	mux.HandleFunc("GET /v1/glossary/terms", listTermsHandler(repo))
-	mux.HandleFunc("POST /v1/glossary/terms", createTermHandler(repo))
-	mux.HandleFunc("GET /v1/glossary/terms/{id}", getTermHandler(repo))
-	mux.HandleFunc("PATCH /v1/glossary/terms/{id}", updateTermHandler(repo))
-	mux.HandleFunc("DELETE /v1/glossary/terms/{id}", deleteTermHandler(repo))
-	mux.HandleFunc("POST /v1/glossary/terms/{id}/assignments", assignTermHandler(repo))
-	mux.HandleFunc("DELETE /v1/glossary/terms/{id}/assignments/{assetId}", unassignTermHandler(repo))
-	mux.HandleFunc("GET /v1/glossary/terms/{id}/assets", assetsForTermHandler(repo))
-	mux.HandleFunc("GET /v1/assets/{id}/terms", termsForAssetHandler(repo))
+func glossaryHandlers(mux *http.ServeMux, repo glossary.Repo, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/glossary/terms", listTermsHandler(repo, authz))
+	mux.HandleFunc("POST /v1/glossary/terms", createTermHandler(repo, authz))
+	mux.HandleFunc("GET /v1/glossary/terms/{id}", getTermHandler(repo, authz))
+	mux.HandleFunc("PATCH /v1/glossary/terms/{id}", updateTermHandler(repo, authz))
+	mux.HandleFunc("DELETE /v1/glossary/terms/{id}", deleteTermHandler(repo, authz))
+	mux.HandleFunc("POST /v1/glossary/terms/{id}/assignments", assignTermHandler(repo, authz))
+	mux.HandleFunc("DELETE /v1/glossary/terms/{id}/assignments/{assetId}", unassignTermHandler(repo, authz))
+	mux.HandleFunc("GET /v1/glossary/terms/{id}/assets", assetsForTermHandler(repo, authz))
+	mux.HandleFunc("GET /v1/assets/{id}/terms", termsForAssetHandler(repo, authz))
 }
 
 type termPayload struct {
@@ -58,9 +59,9 @@ func toTermView(t *glossary.Term) termView {
 	}
 }
 
-func listTermsHandler(r glossary.Repo) http.HandlerFunc {
+func listTermsHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbRead, "glossary_term")
 		if tenant == "" {
 			return
 		}
@@ -77,9 +78,9 @@ func listTermsHandler(r glossary.Repo) http.HandlerFunc {
 	}
 }
 
-func createTermHandler(r glossary.Repo) http.HandlerFunc {
+func createTermHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbEdit, "glossary_term")
 		if tenant == "" {
 			return
 		}
@@ -113,9 +114,9 @@ func createTermHandler(r glossary.Repo) http.HandlerFunc {
 	}
 }
 
-func getTermHandler(r glossary.Repo) http.HandlerFunc {
+func getTermHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbRead, "glossary_term")
 		if tenant == "" {
 			return
 		}
@@ -132,9 +133,9 @@ func getTermHandler(r glossary.Repo) http.HandlerFunc {
 	}
 }
 
-func updateTermHandler(r glossary.Repo) http.HandlerFunc {
+func updateTermHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbEdit, "glossary_term")
 		if tenant == "" {
 			return
 		}
@@ -173,9 +174,9 @@ func updateTermHandler(r glossary.Repo) http.HandlerFunc {
 	}
 }
 
-func deleteTermHandler(r glossary.Repo) http.HandlerFunc {
+func deleteTermHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbDelete, "glossary_term")
 		if tenant == "" {
 			return
 		}
@@ -195,9 +196,9 @@ type assignBody struct {
 	AssetID string `json:"asset_id"`
 }
 
-func assignTermHandler(r glossary.Repo) http.HandlerFunc {
+func assignTermHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbEdit, "glossary_term")
 		if tenant == "" {
 			return
 		}
@@ -226,9 +227,9 @@ func assignTermHandler(r glossary.Repo) http.HandlerFunc {
 	}
 }
 
-func unassignTermHandler(r glossary.Repo) http.HandlerFunc {
+func unassignTermHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbEdit, "glossary_term")
 		if tenant == "" {
 			return
 		}
@@ -245,9 +246,9 @@ func unassignTermHandler(r glossary.Repo) http.HandlerFunc {
 	}
 }
 
-func assetsForTermHandler(r glossary.Repo) http.HandlerFunc {
+func assetsForTermHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbRead, "glossary_term")
 		if tenant == "" {
 			return
 		}
@@ -260,9 +261,9 @@ func assetsForTermHandler(r glossary.Repo) http.HandlerFunc {
 	}
 }
 
-func termsForAssetHandler(r glossary.Repo) http.HandlerFunc {
+func termsForAssetHandler(r glossary.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbRead, "glossary_term")
 		if tenant == "" {
 			return
 		}

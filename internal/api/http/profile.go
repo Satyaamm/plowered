@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/core/profile"
 	"github.com/Satyaamm/plowered/internal/core/warehouse"
 )
@@ -18,17 +19,17 @@ type Profiler interface {
 	Refresh(ctx context.Context, tenantID, tableAssetID string) (*profile.Report, error)
 }
 
-func profileHandlers(mux *http.ServeMux, p Profiler) {
+func profileHandlers(mux *http.ServeMux, p Profiler, authz policy.Authorizer) {
 	if p == nil {
 		return
 	}
-	mux.HandleFunc("GET /v1/assets/{id}/profile", profileGetHandler(p))
-	mux.HandleFunc("POST /v1/assets/{id}/profile:refresh", profileRefreshHandler(p))
+	mux.HandleFunc("GET /v1/assets/{id}/profile", profileGetHandler(p, authz))
+	mux.HandleFunc("POST /v1/assets/{id}/profile:refresh", profileRefreshHandler(p, authz))
 }
 
-func profileGetHandler(p Profiler) http.HandlerFunc {
+func profileGetHandler(p Profiler, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "asset")
 		if tenant == "" {
 			return
 		}
@@ -43,9 +44,11 @@ func profileGetHandler(p Profiler) http.HandlerFunc {
 	}
 }
 
-func profileRefreshHandler(p Profiler) http.HandlerFunc {
+func profileRefreshHandler(p Profiler, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Refresh re-scans the warehouse for nulls + top-k + histograms.
+		// VerbRun gates the warehouse work to editor+.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRun, "asset")
 		if tenant == "" {
 			return
 		}

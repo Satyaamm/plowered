@@ -20,9 +20,9 @@ import (
 // Search results are filtered through the policy engine so an LLM agent
 // (or any user) cannot bypass tag-based deny rules just by phrasing
 // their question creatively.
-func semanticHandlers(mux *http.ServeMux, ix *search.Indexer, srch *search.Searcher, rules policy.RuleStore, jobsRepo jobs.Repo, enq worker.Enqueuer) {
-	mux.HandleFunc("POST /v1/search:semantic", semanticSearchHandler(srch, rules))
-	mux.HandleFunc("POST /v1/search:reindex", reindexHandler(ix, jobsRepo, enq))
+func semanticHandlers(mux *http.ServeMux, ix *search.Indexer, srch *search.Searcher, rules policy.RuleStore, jobsRepo jobs.Repo, enq worker.Enqueuer, authz policy.Authorizer) {
+	mux.HandleFunc("POST /v1/search:semantic", semanticSearchHandler(srch, rules, authz))
+	mux.HandleFunc("POST /v1/search:reindex", reindexHandler(ix, jobsRepo, enq, authz))
 }
 
 type semanticRequest struct {
@@ -39,9 +39,9 @@ type semanticHit struct {
 	Score         float32  `json:"score"`
 }
 
-func semanticSearchHandler(srch *search.Searcher, rules policy.RuleStore) http.HandlerFunc {
+func semanticSearchHandler(srch *search.Searcher, rules policy.RuleStore, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "asset")
 		if tenant == "" {
 			return
 		}
@@ -87,9 +87,11 @@ func semanticSearchHandler(srch *search.Searcher, rules policy.RuleStore) http.H
 // configured (the production path) and returns 202 + {job_id}. Without
 // them it falls back to the synchronous IndexAll, which still works for
 // small embedded deployments.
-func reindexHandler(ix *search.Indexer, jobsRepo jobs.Repo, enq worker.Enqueuer) http.HandlerFunc {
+func reindexHandler(ix *search.Indexer, jobsRepo jobs.Repo, enq worker.Enqueuer, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Reindex is a write-side action — rewrites embeddings for every
+		// asset. Admin-only to prevent a viewer from burning budget.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "asset")
 		if tenant == "" {
 			return
 		}

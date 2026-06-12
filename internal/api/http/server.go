@@ -20,6 +20,8 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/deleted"
 	"github.com/Satyaamm/plowered/internal/core/dsr"
 	"github.com/Satyaamm/plowered/internal/core/email"
+	"github.com/Satyaamm/plowered/internal/core/feedback"
+	"github.com/Satyaamm/plowered/internal/core/vectorstore"
 	"github.com/Satyaamm/plowered/internal/core/glossary"
 	"github.com/Satyaamm/plowered/internal/core/graph"
 	"github.com/Satyaamm/plowered/internal/core/identity"
@@ -116,6 +118,22 @@ type Deps struct {
 	// /v1/assets/{id}/contract surface. Optional — when nil the
 	// routes aren't registered.
 	Contract *contract.Service
+
+	// Authorizer is the per-request RBAC + ABAC checkpoint. When nil,
+	// NewMux derives one from d.Policies (or falls back to a permissive
+	// AllowAll for memory mode + tests). Callers can pass their own to
+	// override — e.g. an integration test that wants AllowAll regardless
+	// of the wired policy store.
+	Authorizer policy.Authorizer
+
+	// Feedback exposes the user-feedback queue. Optional — when nil the
+	// /v1/feedback routes aren't registered.
+	Feedback feedback.Repo
+
+	// VectorStores powers /v1/vectorstores. Optional — when nil the
+	// routes aren't registered. The asset_embeddings + memory fallback
+	// continues to serve search until a tenant configures one.
+	VectorStores vectorstore.Repo
 }
 
 // NewMux returns an *http.ServeMux with every registered route. Callers
@@ -127,38 +145,46 @@ func NewMux(d Deps) *http.ServeMux {
 	if enq == nil {
 		enq = worker.NoopEnqueuer{}
 	}
+	authz := d.Authorizer
+	if authz == nil {
+		// Default: wire the engine against the registered policy store so
+		// per-resource ABAC rules apply. With no store, the engine still
+		// runs role grants — only the deny-rule overrides go away.
+		authz = policy.NewEngine(d.Policies)
+	}
 	if d.Catalog != nil {
-		registerCatalog(mux, d.Catalog)
+		registerCatalog(mux, d.Catalog, authz)
 	}
 	if d.Pipelines != nil {
-		pipelineHandlers(mux, d.Pipelines, enq, d.Deleted, d.LegalHolds)
+		pipelineHandlers(mux, d.Pipelines, enq, d.Deleted, d.LegalHolds, authz)
 	}
 	if d.Quality != nil {
-		checkHandlers(mux, d.Quality, enq, d.Deleted, d.LegalHolds)
+		checkHandlers(mux, d.Quality, enq, d.Deleted, d.LegalHolds, authz)
 	}
 	if d.Notify != nil {
-		notifyHandlers(mux, d.Notify)
+		notifyHandlers(mux, d.Notify, authz)
 	}
 	if d.Policies != nil {
-		policyHandlers(mux, d.Policies, d.Deleted, d.LegalHolds)
+		policyHandlers(mux, d.Policies, d.Deleted, d.LegalHolds, authz)
 	}
 	if d.Audit != nil {
-		auditHandlers(mux, d.Audit)
+		auditHandlers(mux, d.Audit, authz)
 	}
 	if d.Deleted != nil {
-		deletedHandlers(mux, d.Deleted, buildRestorers(d))
+		deletedHandlers(mux, d.Deleted, buildRestorers(d), authz)
 	}
 	if d.LegalHolds != nil {
-		legalHoldHandlers(mux, d.LegalHolds)
+		legalHoldHandlers(mux, d.LegalHolds, authz)
 	}
 	if d.DSR != nil {
-		dsrHandlers(mux, d.DSR)
+		dsrHandlers(mux, d.DSR, authz)
 	}
 	if d.Identity != nil {
 		authDeps := AuthDeps{
-			Identity: d.Identity,
-			Email:    d.Email,
-			Config:   d.AuthCfg,
+			Identity:   d.Identity,
+			Email:      d.Email,
+			Config:     d.AuthCfg,
+			Authorizer: authz,
 		}
 		authHandlers(mux, authDeps)
 		teamHandlers(mux, authDeps)
@@ -172,55 +198,62 @@ func NewMux(d Deps) *http.ServeMux {
 			Vault:       d.Vault,
 			Registry:    d.ConnRegistry,
 			Enqueuer:    enq,
+			Authorizer:  authz,
 		})
 	}
 	if d.Pipelines != nil && d.Logs != nil {
-		runLogsHandlers(mux, d.Pipelines, d.Logs)
+		runLogsHandlers(mux, d.Pipelines, d.Logs, authz)
 	}
 	if d.ColumnLineage != nil {
-		columnLineageHandlers(mux, d.ColumnLineage)
+		columnLineageHandlers(mux, d.ColumnLineage, authz)
 	}
 	if d.Glossary != nil {
-		glossaryHandlers(mux, d.Glossary)
+		glossaryHandlers(mux, d.Glossary, authz)
 	}
 	if d.Classifier != nil || d.Classifications != nil {
-		classifyHandlers(mux, d.Classifier, d.Classifications, d.Jobs, enq)
+		classifyHandlers(mux, d.Classifier, d.Classifications, d.Jobs, enq, authz)
 	}
 	if d.Profiler != nil {
-		profileHandlers(mux, d.Profiler)
+		profileHandlers(mux, d.Profiler, authz)
 	}
 	if d.Describer != nil {
-		describeHandlers(mux, d.Describer)
+		describeHandlers(mux, d.Describer, authz)
 	}
 	if d.Asker != nil {
-		askHandlers(mux, d.Asker)
+		askHandlers(mux, d.Asker, authz)
 	}
 	if d.Migrator != nil {
-		migrationHandlers(mux, d.Migrator, d.Enqueuer)
+		migrationHandlers(mux, d.Migrator, d.Enqueuer, authz)
 	}
 	if d.Jobs != nil {
-		jobsHandlers(mux, d.Jobs)
+		jobsHandlers(mux, d.Jobs, authz)
 	}
 	if d.AIProviders != nil {
-		aiProviderHandlers(mux, d.AIProviders, d.Vault)
+		aiProviderHandlers(mux, d.AIProviders, d.Vault, authz)
 	}
 	if d.Certification != nil {
-		certificationHandlers(mux, d.Certification)
+		certificationHandlers(mux, d.Certification, authz)
 	}
 	if d.Cost != nil {
-		costHandlers(mux, d.Cost, d.CostBudgets)
+		costHandlers(mux, d.Cost, d.CostBudgets, authz)
 	}
 	if d.Contract != nil {
-		contractHandlers(mux, d.Contract)
+		contractHandlers(mux, d.Contract, authz)
+	}
+	if d.Feedback != nil {
+		feedbackHandlers(mux, d.Feedback, authz)
+	}
+	if d.VectorStores != nil {
+		vectorStoreHandlers(mux, d.VectorStores, d.Vault, authz)
 	}
 	if d.Catalog != nil && d.Policies != nil {
-		accessHandlers(mux, d.Catalog, d.Policies, d.Identity)
+		accessHandlers(mux, d.Catalog, d.Policies, d.Identity, authz)
 	}
 	if d.Catalog != nil {
 		mountMCP(mux, d)
 	}
 	if d.SearchIndexer != nil && d.SearchSearcher != nil {
-		semanticHandlers(mux, d.SearchIndexer, d.SearchSearcher, d.Policies, d.Jobs, enq)
+		semanticHandlers(mux, d.SearchIndexer, d.SearchSearcher, d.Policies, d.Jobs, enq, authz)
 	}
 	mux.HandleFunc("GET /v1/stats", statsHandler(StatsDeps{
 		Catalog:     d.Catalog,
@@ -230,6 +263,7 @@ func NewMux(d Deps) *http.ServeMux {
 		LegalHolds:  d.LegalHolds,
 		DSR:         d.DSR,
 		Connections: d.Connections,
+		Authorizer:  authz,
 	}))
 	return mux
 }
@@ -258,16 +292,16 @@ func Mux(store storage.Store) *http.ServeMux {
 	return NewMux(Deps{Catalog: store})
 }
 
-func registerCatalog(mux *http.ServeMux, store storage.Store) {
-	mux.HandleFunc("GET /v1/assets",                     listAssetsHandler(store))
-	mux.HandleFunc("POST /v1/assets",                    createAssetHandler(store))
-	mux.HandleFunc("GET /v1/assets/{id}",                getAssetHandler(store))
-	mux.HandleFunc("PATCH /v1/assets/{id}",              updateAssetHandler(store))
-	mux.HandleFunc("PATCH /v1/assets/{id}/owners",       updateAssetOwnersHandler(store))
-	mux.HandleFunc("DELETE /v1/assets/{id}",             deleteAssetHandler(store))
-	mux.HandleFunc("GET /v1/assets:byQualifiedName",     getByQNHandler(store))
-	mux.HandleFunc("POST /v1/assets:search",             searchAssetsHandler(store))
-	mux.HandleFunc("GET /v1/assets/{id}/lineage",        lineageHandler(store))
+func registerCatalog(mux *http.ServeMux, store storage.Store, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/assets",                     listAssetsHandler(store, authz))
+	mux.HandleFunc("POST /v1/assets",                    createAssetHandler(store, authz))
+	mux.HandleFunc("GET /v1/assets/{id}",                getAssetHandler(store, authz))
+	mux.HandleFunc("PATCH /v1/assets/{id}",              updateAssetHandler(store, authz))
+	mux.HandleFunc("PATCH /v1/assets/{id}/owners",       updateAssetOwnersHandler(store, authz))
+	mux.HandleFunc("DELETE /v1/assets/{id}",             deleteAssetHandler(store, authz))
+	mux.HandleFunc("GET /v1/assets:byQualifiedName",     getByQNHandler(store, authz))
+	mux.HandleFunc("POST /v1/assets:search",             searchAssetsHandler(store, authz))
+	mux.HandleFunc("GET /v1/assets/{id}/lineage",        lineageHandler(store, authz))
 }
 
 // ----- response helpers -----

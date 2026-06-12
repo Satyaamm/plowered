@@ -9,6 +9,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/dsr"
 	"github.com/Satyaamm/plowered/internal/core/legalhold"
 	"github.com/Satyaamm/plowered/internal/core/pipeline"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/core/quality"
 	"github.com/Satyaamm/plowered/internal/storage"
 )
@@ -24,6 +25,7 @@ type StatsDeps struct {
 	LegalHolds  legalhold.Repo
 	DSR         dsr.Repo
 	Connections connection.Repo
+	Authorizer  policy.Authorizer
 }
 
 // StatsResponse is the JSON the home page reads. Single-roundtrip to fill
@@ -50,7 +52,10 @@ type StatsResponse struct {
 // over the serial alternative.
 func statsHandler(d StatsDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Stats is a read-only dashboard summary — anyone with read on
+		// the catalog can pull it. Sensitive counts (deleted, holds,
+		// dsr) are still tenant-scoped at the repo layer.
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbRead, "asset")
 		if tenant == "" {
 			return
 		}

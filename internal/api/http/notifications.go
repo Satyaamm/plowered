@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/Satyaamm/plowered/internal/core/notify"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
 func newChannelID() string {
@@ -17,17 +18,17 @@ func newChannelID() string {
 	return hex.EncodeToString(b[:])
 }
 
-func notifyHandlers(mux *http.ServeMux, store notify.Repo) {
-	mux.HandleFunc("GET /v1/notifications/channels",       listChannelsHandler(store))
-	mux.HandleFunc("POST /v1/notifications/channels",      createChannelHandler(store))
-	mux.HandleFunc("GET /v1/notifications/rules",          listNotifyRulesHandler(store))
-	mux.HandleFunc("POST /v1/notifications/rules",         createNotifyRuleHandler(store))
-	mux.HandleFunc("GET /v1/notifications/deliveries",     listDeliveriesHandler(store))
+func notifyHandlers(mux *http.ServeMux, store notify.Repo, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/notifications/channels",       listChannelsHandler(store, authz))
+	mux.HandleFunc("POST /v1/notifications/channels",      createChannelHandler(store, authz))
+	mux.HandleFunc("GET /v1/notifications/rules",          listNotifyRulesHandler(store, authz))
+	mux.HandleFunc("POST /v1/notifications/rules",         createNotifyRuleHandler(store, authz))
+	mux.HandleFunc("GET /v1/notifications/deliveries",     listDeliveriesHandler(store, authz))
 }
 
-func listChannelsHandler(s notify.Repo) http.HandlerFunc {
+func listChannelsHandler(s notify.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "notify_channel")
 		if tenant == "" {
 			return
 		}
@@ -35,9 +36,9 @@ func listChannelsHandler(s notify.Repo) http.HandlerFunc {
 	}
 }
 
-func createChannelHandler(s notify.Repo) http.HandlerFunc {
+func createChannelHandler(s notify.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "notify_channel")
 		if tenant == "" {
 			return
 		}
@@ -59,9 +60,9 @@ func createChannelHandler(s notify.Repo) http.HandlerFunc {
 	}
 }
 
-func listNotifyRulesHandler(s notify.Repo) http.HandlerFunc {
+func listNotifyRulesHandler(s notify.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "notify_rule")
 		if tenant == "" {
 			return
 		}
@@ -90,9 +91,9 @@ func listNotifyRulesHandler(s notify.Repo) http.HandlerFunc {
 	}
 }
 
-func createNotifyRuleHandler(s notify.Repo) http.HandlerFunc {
+func createNotifyRuleHandler(s notify.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "notify_rule")
 		if tenant == "" {
 			return
 		}
@@ -114,9 +115,9 @@ func createNotifyRuleHandler(s notify.Repo) http.HandlerFunc {
 	}
 }
 
-func listDeliveriesHandler(s notify.Repo) http.HandlerFunc {
+func listDeliveriesHandler(s notify.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "notify_rule")
 		if tenant == "" {
 			return
 		}

@@ -7,18 +7,19 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/deleted"
 	"github.com/Satyaamm/plowered/internal/core/legalhold"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/core/quality"
 	"github.com/Satyaamm/plowered/internal/worker"
 )
 
-func checkHandlers(mux *http.ServeMux, store quality.Store, enq worker.Enqueuer, tomb deleted.Repo, holds legalhold.Repo) {
-	mux.HandleFunc("GET /v1/checks",                listChecksHandler(store))
-	mux.HandleFunc("POST /v1/checks",               createCheckHandler(store))
-	mux.HandleFunc("GET /v1/checks/{id}",           getCheckHandler(store))
-	mux.HandleFunc("PATCH /v1/checks/{id}",         updateCheckHandler(store))
-	mux.HandleFunc("DELETE /v1/checks/{id}",        deleteCheckHandler(store, tomb, holds))
-	mux.HandleFunc("GET /v1/checks/{id}/runs",      listCheckRunsHandler(store))
-	mux.HandleFunc("POST /v1/checks/{id}/run",      runCheckHandler(store, enq))
+func checkHandlers(mux *http.ServeMux, store quality.Store, enq worker.Enqueuer, tomb deleted.Repo, holds legalhold.Repo, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/checks",                listChecksHandler(store, authz))
+	mux.HandleFunc("POST /v1/checks",               createCheckHandler(store, authz))
+	mux.HandleFunc("GET /v1/checks/{id}",           getCheckHandler(store, authz))
+	mux.HandleFunc("PATCH /v1/checks/{id}",         updateCheckHandler(store, authz))
+	mux.HandleFunc("DELETE /v1/checks/{id}",        deleteCheckHandler(store, tomb, holds, authz))
+	mux.HandleFunc("GET /v1/checks/{id}/runs",      listCheckRunsHandler(store, authz))
+	mux.HandleFunc("POST /v1/checks/{id}/run",      runCheckHandler(store, enq, authz))
 }
 
 // runCheckRequest is the optional body posted to /v1/checks/{id}/run.
@@ -28,9 +29,9 @@ type runCheckRequest struct {
 	TimeoutSec    int     `json:"timeout_sec,omitempty"`
 }
 
-func runCheckHandler(s quality.Store, enq worker.Enqueuer) http.HandlerFunc {
+func runCheckHandler(s quality.Store, enq worker.Enqueuer, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRun, "check")
 		if tenant == "" {
 			return
 		}
@@ -61,9 +62,9 @@ func runCheckHandler(s quality.Store, enq worker.Enqueuer) http.HandlerFunc {
 	}
 }
 
-func listChecksHandler(s quality.Store) http.HandlerFunc {
+func listChecksHandler(s quality.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "check")
 		if tenant == "" {
 			return
 		}
@@ -76,9 +77,9 @@ func listChecksHandler(s quality.Store) http.HandlerFunc {
 	}
 }
 
-func createCheckHandler(s quality.Store) http.HandlerFunc {
+func createCheckHandler(s quality.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbEdit, "check")
 		if tenant == "" {
 			return
 		}
@@ -101,9 +102,9 @@ func createCheckHandler(s quality.Store) http.HandlerFunc {
 	}
 }
 
-func getCheckHandler(s quality.Store) http.HandlerFunc {
+func getCheckHandler(s quality.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "check")
 		if tenant == "" {
 			return
 		}
@@ -116,9 +117,9 @@ func getCheckHandler(s quality.Store) http.HandlerFunc {
 	}
 }
 
-func updateCheckHandler(s quality.Store) http.HandlerFunc {
+func updateCheckHandler(s quality.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbEdit, "check")
 		if tenant == "" {
 			return
 		}
@@ -145,9 +146,9 @@ func updateCheckHandler(s quality.Store) http.HandlerFunc {
 	}
 }
 
-func deleteCheckHandler(s quality.Store, tomb deleted.Repo, holds legalhold.Repo) http.HandlerFunc {
+func deleteCheckHandler(s quality.Store, tomb deleted.Repo, holds legalhold.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbDelete, "check")
 		if tenant == "" {
 			return
 		}
@@ -182,9 +183,9 @@ func checkRestorer(s quality.Store) Restorer {
 	}
 }
 
-func listCheckRunsHandler(s quality.Store) http.HandlerFunc {
+func listCheckRunsHandler(s quality.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "check")
 		if tenant == "" {
 			return
 		}

@@ -7,26 +7,27 @@ import (
 	"strconv"
 
 	"github.com/Satyaamm/plowered/internal/core/contract"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
-func contractHandlers(mux *http.ServeMux, svc *contract.Service) {
+func contractHandlers(mux *http.ServeMux, svc *contract.Service, authz policy.Authorizer) {
 	if svc == nil {
 		return
 	}
-	mux.HandleFunc("GET    /v1/contracts",                          listContractsHandler(svc))
-	mux.HandleFunc("POST   /v1/contracts",                          upsertContractHandler(svc))
-	mux.HandleFunc("GET    /v1/contracts/{id}",                     getContractHandler(svc))
-	mux.HandleFunc("DELETE /v1/contracts/{id}",                     deleteContractHandler(svc))
-	mux.HandleFunc("POST   /v1/contracts/{id}/evaluate",            evaluateContractHandler(svc))
-	mux.HandleFunc("GET    /v1/contracts/{id}/breaches",            contractBreachesHandler(svc))
-	mux.HandleFunc("GET    /v1/contracts/breaches",                 tenantBreachesHandler(svc))
-	mux.HandleFunc("POST   /v1/contracts/evaluate",                 evaluateAllHandler(svc))
-	mux.HandleFunc("GET    /v1/assets/{id}/contract",               assetContractHandler(svc))
+	mux.HandleFunc("GET    /v1/contracts",                          listContractsHandler(svc, authz))
+	mux.HandleFunc("POST   /v1/contracts",                          upsertContractHandler(svc, authz))
+	mux.HandleFunc("GET    /v1/contracts/{id}",                     getContractHandler(svc, authz))
+	mux.HandleFunc("DELETE /v1/contracts/{id}",                     deleteContractHandler(svc, authz))
+	mux.HandleFunc("POST   /v1/contracts/{id}/evaluate",            evaluateContractHandler(svc, authz))
+	mux.HandleFunc("GET    /v1/contracts/{id}/breaches",            contractBreachesHandler(svc, authz))
+	mux.HandleFunc("GET    /v1/contracts/breaches",                 tenantBreachesHandler(svc, authz))
+	mux.HandleFunc("POST   /v1/contracts/evaluate",                 evaluateAllHandler(svc, authz))
+	mux.HandleFunc("GET    /v1/assets/{id}/contract",               assetContractHandler(svc, authz))
 }
 
-func listContractsHandler(svc *contract.Service) http.HandlerFunc {
+func listContractsHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "contract")
 		if tenant == "" {
 			return
 		}
@@ -48,9 +49,9 @@ type upsertContractReq struct {
 	Description      string                       `json:"description"`
 }
 
-func upsertContractHandler(svc *contract.Service) http.HandlerFunc {
+func upsertContractHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant, actor := tenantAndActor(w, r)
+		tenant, actor := gateTenantActorAndVerb(w, r, authz, policy.VerbEdit, "contract")
 		if tenant == "" {
 			return
 		}
@@ -77,9 +78,9 @@ func upsertContractHandler(svc *contract.Service) http.HandlerFunc {
 	}
 }
 
-func getContractHandler(svc *contract.Service) http.HandlerFunc {
+func getContractHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "contract")
 		if tenant == "" {
 			return
 		}
@@ -92,9 +93,9 @@ func getContractHandler(svc *contract.Service) http.HandlerFunc {
 	}
 }
 
-func deleteContractHandler(svc *contract.Service) http.HandlerFunc {
+func deleteContractHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbDelete, "contract")
 		if tenant == "" {
 			return
 		}
@@ -106,9 +107,9 @@ func deleteContractHandler(svc *contract.Service) http.HandlerFunc {
 	}
 }
 
-func evaluateContractHandler(svc *contract.Service) http.HandlerFunc {
+func evaluateContractHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRun, "contract")
 		if tenant == "" {
 			return
 		}
@@ -124,9 +125,9 @@ func evaluateContractHandler(svc *contract.Service) http.HandlerFunc {
 	}
 }
 
-func evaluateAllHandler(svc *contract.Service) http.HandlerFunc {
+func evaluateAllHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRun, "contract")
 		if tenant == "" {
 			return
 		}
@@ -139,9 +140,9 @@ func evaluateAllHandler(svc *contract.Service) http.HandlerFunc {
 	}
 }
 
-func contractBreachesHandler(svc *contract.Service) http.HandlerFunc {
+func contractBreachesHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "contract")
 		if tenant == "" {
 			return
 		}
@@ -155,9 +156,9 @@ func contractBreachesHandler(svc *contract.Service) http.HandlerFunc {
 	}
 }
 
-func tenantBreachesHandler(svc *contract.Service) http.HandlerFunc {
+func tenantBreachesHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "contract")
 		if tenant == "" {
 			return
 		}
@@ -171,9 +172,9 @@ func tenantBreachesHandler(svc *contract.Service) http.HandlerFunc {
 	}
 }
 
-func assetContractHandler(svc *contract.Service) http.HandlerFunc {
+func assetContractHandler(svc *contract.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "contract")
 		if tenant == "" {
 			return
 		}

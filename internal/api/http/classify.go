@@ -9,6 +9,7 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/classifier"
 	"github.com/Satyaamm/plowered/internal/core/jobs"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/worker"
 )
 
@@ -26,15 +27,15 @@ type ClassificationReader interface {
 	ListByAsset(ctx context.Context, tenantID, assetID string) ([]string, error)
 }
 
-func classifyHandlers(mux *http.ServeMux, c Classifier, reader ClassificationReader, jobsRepo jobs.Repo, enq worker.Enqueuer) {
+func classifyHandlers(mux *http.ServeMux, c Classifier, reader ClassificationReader, jobsRepo jobs.Repo, enq worker.Enqueuer, authz policy.Authorizer) {
 	if c != nil {
-		mux.HandleFunc("POST /v1/connections/{id}/classify", classifyConnectionHandler(c, jobsRepo, enq))
-		mux.HandleFunc("POST /v1/connections/{id}/classify:preview", classifyPreviewHandler(c))
-		mux.HandleFunc("POST /v1/connections/{id}/classify:apply", classifyApplyHandler(c))
-		mux.HandleFunc("GET /v1/connections/{id}/scope", classifyScopeHandler(c))
+		mux.HandleFunc("POST /v1/connections/{id}/classify", classifyConnectionHandler(c, jobsRepo, enq, authz))
+		mux.HandleFunc("POST /v1/connections/{id}/classify:preview", classifyPreviewHandler(c, authz))
+		mux.HandleFunc("POST /v1/connections/{id}/classify:apply", classifyApplyHandler(c, authz))
+		mux.HandleFunc("GET /v1/connections/{id}/scope", classifyScopeHandler(c, authz))
 	}
 	if reader != nil {
-		mux.HandleFunc("GET /v1/assets/{id}/classifications", listAssetClassificationsHandler(reader))
+		mux.HandleFunc("GET /v1/assets/{id}/classifications", listAssetClassificationsHandler(reader, authz))
 	}
 }
 
@@ -42,9 +43,11 @@ func classifyHandlers(mux *http.ServeMux, c Classifier, reader ClassificationRea
 // repo + Enqueuer are wired (the production path) and returns
 // 202 + {job_id}. When neither is set the handler falls back to the
 // legacy synchronous run with a 90s budget.
-func classifyConnectionHandler(c Classifier, jobsRepo jobs.Repo, enq worker.Enqueuer) http.HandlerFunc {
+func classifyConnectionHandler(c Classifier, jobsRepo jobs.Repo, enq worker.Enqueuer, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Classification samples customer data via the connection's
+		// credentials. Admin gate matches the connection surface.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "connection")
 		if tenant == "" {
 			return
 		}
@@ -109,9 +112,10 @@ type classifyPreviewRequest struct {
 // classifyPreviewHandler runs the sampler against the customer warehouse
 // and returns proposed tags WITHOUT writing anything. Synchronous —
 // the wizard polls this once on Step 2 entry.
-func classifyPreviewHandler(c Classifier) http.HandlerFunc {
+func classifyPreviewHandler(c Classifier, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Preview also samples the warehouse — admin only.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "connection")
 		if tenant == "" {
 			return
 		}
@@ -150,9 +154,10 @@ type classifyApplyDecision struct {
 }
 
 // classifyApplyHandler writes the user-approved tags from the preview.
-func classifyApplyHandler(c Classifier) http.HandlerFunc {
+func classifyApplyHandler(c Classifier, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Writes tags onto column assets — steward+ owns classification.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbCertify, "classification")
 		if tenant == "" {
 			return
 		}
@@ -233,9 +238,9 @@ func proposalToJSON(p *classifier.Proposal) map[string]any {
 //
 // Schemas is deduped and sorted. Tables are sorted (schema, name) for
 // stable rendering.
-func classifyScopeHandler(c Classifier) http.HandlerFunc {
+func classifyScopeHandler(c Classifier, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "connection")
 		if tenant == "" {
 			return
 		}
@@ -279,9 +284,9 @@ func classifyScopeHandler(c Classifier) http.HandlerFunc {
 	}
 }
 
-func listAssetClassificationsHandler(reader ClassificationReader) http.HandlerFunc {
+func listAssetClassificationsHandler(reader ClassificationReader, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "asset")
 		if tenant == "" {
 			return
 		}

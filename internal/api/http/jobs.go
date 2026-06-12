@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Satyaamm/plowered/internal/core/jobs"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
 // jobsHandlers exposes the durable async-job ledger:
@@ -17,9 +18,9 @@ import (
 // The frontend polls /v1/jobs/{id} every couple seconds while a long
 // task is running; once status reaches succeeded/failed the result is
 // final.
-func jobsHandlers(mux *http.ServeMux, repo jobs.Repo) {
-	mux.HandleFunc("GET /v1/jobs/{id}", getJobHandler(repo))
-	mux.HandleFunc("GET /v1/jobs", listJobsHandler(repo))
+func jobsHandlers(mux *http.ServeMux, repo jobs.Repo, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/jobs/{id}", getJobHandler(repo, authz))
+	mux.HandleFunc("GET /v1/jobs", listJobsHandler(repo, authz))
 }
 
 type jobResp struct {
@@ -61,9 +62,9 @@ func toJobResp(j *jobs.Job) jobResp {
 	return r
 }
 
-func getJobHandler(repo jobs.Repo) http.HandlerFunc {
+func getJobHandler(repo jobs.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "job")
 		if tenant == "" {
 			return
 		}
@@ -80,9 +81,9 @@ func getJobHandler(repo jobs.Repo) http.HandlerFunc {
 	}
 }
 
-func listJobsHandler(repo jobs.Repo) http.HandlerFunc {
+func listJobsHandler(repo jobs.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "job")
 		if tenant == "" {
 			return
 		}

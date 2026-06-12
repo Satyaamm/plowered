@@ -10,6 +10,7 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/email"
 	"github.com/Satyaamm/plowered/internal/core/identity"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
 // teamHandlers exposes the team-management surface on top of AuthDeps:
@@ -24,9 +25,11 @@ import (
 //	POST   /v1/auth/accept-invite  public; creates user + membership
 //	GET    /v1/auth/invite-info    public; preview invite by token
 //
-// Admin gate: the auth chain already populates principal.Roles; we
-// require role "admin" for any write-side operation. A future RBAC
-// pass can move this onto the policy.Engine.
+// Admin gate: write-side endpoints route through policy.Authorizer
+// (VerbAdmin on resource "team_member" / "invite"). Read endpoints
+// require VerbRead. The legacy requireAdmin helper is gone — the
+// engine + per-resource ABAC rules are the only place admin is
+// resolved.
 func teamHandlers(mux *http.ServeMux, d AuthDeps) {
 	mux.HandleFunc("GET /v1/members", listMembersHandler(d))
 	mux.HandleFunc("PATCH /v1/members/{user_id}", updateMemberHandler(d))
@@ -97,21 +100,6 @@ type acceptInviteReq struct {
 
 // ----- helpers -----
 
-func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	pr, ok := principalFrom(r)
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, errorBody{"unauthorized", "authentication required"})
-		return false
-	}
-	for _, role := range pr.Roles {
-		if role == "admin" || role == "super_admin" {
-			return true
-		}
-	}
-	writeJSON(w, http.StatusForbidden, errorBody{"forbidden", "admin role required"})
-	return false
-}
-
 func validRoles(roles []string) []string {
 	allowed := map[string]bool{
 		"viewer": true, "editor": true, "steward": true, "admin": true,
@@ -135,7 +123,7 @@ func validRoles(roles []string) []string {
 
 func listMembersHandler(d AuthDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbRead, "team_member")
 		if tenant == "" {
 			return
 		}
@@ -164,8 +152,8 @@ func listMembersHandler(d AuthDeps) http.HandlerFunc {
 
 func updateMemberHandler(d AuthDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
-		if tenant == "" || !requireAdmin(w, r) {
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "team_member")
+		if tenant == "" {
 			return
 		}
 		userID := r.PathValue("user_id")
@@ -184,8 +172,8 @@ func updateMemberHandler(d AuthDeps) http.HandlerFunc {
 
 func removeMemberHandler(d AuthDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
-		if tenant == "" || !requireAdmin(w, r) {
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "team_member")
+		if tenant == "" {
 			return
 		}
 		userID := r.PathValue("user_id")
@@ -208,7 +196,9 @@ func removeMemberHandler(d AuthDeps) http.HandlerFunc {
 
 func listInvitesHandler(d AuthDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Pending invites can leak attacker-controlled email patterns,
+		// so we require admin to view (not just read).
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "invite")
 		if tenant == "" {
 			return
 		}
@@ -239,8 +229,8 @@ func listInvitesHandler(d AuthDeps) http.HandlerFunc {
 
 func createInviteHandler(d AuthDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
-		if tenant == "" || !requireAdmin(w, r) {
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "invite")
+		if tenant == "" {
 			return
 		}
 		var req createInviteReq
@@ -307,8 +297,8 @@ func createInviteHandler(d AuthDeps) http.HandlerFunc {
 
 func revokeInviteHandler(d AuthDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
-		if tenant == "" || !requireAdmin(w, r) {
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "invite")
+		if tenant == "" {
 			return
 		}
 		if err := d.Identity.RevokeInvite(r.Context(), tenant, r.PathValue("id"), time.Now().UTC()); err != nil {

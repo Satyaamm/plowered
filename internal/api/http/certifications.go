@@ -6,20 +6,21 @@ import (
 	"net/http"
 
 	"github.com/Satyaamm/plowered/internal/core/certification"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
-func certificationHandlers(mux *http.ServeMux, svc *certification.Service) {
+func certificationHandlers(mux *http.ServeMux, svc *certification.Service, authz policy.Authorizer) {
 	if svc == nil {
 		return
 	}
 	// Per-asset surface: history + propose
-	mux.HandleFunc("GET  /v1/assets/{id}/certifications",   listAssetCertsHandler(svc))
-	mux.HandleFunc("POST /v1/assets/{id}/certifications",   proposeCertHandler(svc))
+	mux.HandleFunc("GET  /v1/assets/{id}/certifications",   listAssetCertsHandler(svc, authz))
+	mux.HandleFunc("POST /v1/assets/{id}/certifications",   proposeCertHandler(svc, authz))
 	// Cross-asset review surface
-	mux.HandleFunc("GET  /v1/certifications/pending",       pendingCertsHandler(svc))
-	mux.HandleFunc("POST /v1/certifications/{id}/approve",  approveCertHandler(svc))
-	mux.HandleFunc("POST /v1/certifications/{id}/reject",   rejectCertHandler(svc))
-	mux.HandleFunc("POST /v1/assets/{id}/certifications/revoke", revokeCertHandler(svc))
+	mux.HandleFunc("GET  /v1/certifications/pending",       pendingCertsHandler(svc, authz))
+	mux.HandleFunc("POST /v1/certifications/{id}/approve",  approveCertHandler(svc, authz))
+	mux.HandleFunc("POST /v1/certifications/{id}/reject",   rejectCertHandler(svc, authz))
+	mux.HandleFunc("POST /v1/assets/{id}/certifications/revoke", revokeCertHandler(svc, authz))
 }
 
 type proposeCertReq struct {
@@ -29,9 +30,9 @@ type reviewReq struct {
 	Note string `json:"note"`
 }
 
-func listAssetCertsHandler(svc *certification.Service) http.HandlerFunc {
+func listAssetCertsHandler(svc *certification.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "certification")
 		if tenant == "" {
 			return
 		}
@@ -48,18 +49,14 @@ func listAssetCertsHandler(svc *certification.Service) http.HandlerFunc {
 	}
 }
 
-func proposeCertHandler(svc *certification.Service) http.HandlerFunc {
+func proposeCertHandler(svc *certification.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant, actor := gateTenantActorAndVerb(w, r, authz, policy.VerbPropose, "certification")
 		if tenant == "" {
 			return
 		}
 		var body proposeCertReq
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		actor := ""
-		if pr, ok := principalFrom(r); ok {
-			actor = pr.ID
-		}
 		c, err := svc.Propose(r.Context(), tenant, r.PathValue("id"), actor, body.Justification)
 		if err != nil {
 			writeCertError(w, err)
@@ -69,9 +66,9 @@ func proposeCertHandler(svc *certification.Service) http.HandlerFunc {
 	}
 }
 
-func pendingCertsHandler(svc *certification.Service) http.HandlerFunc {
+func pendingCertsHandler(svc *certification.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "certification")
 		if tenant == "" {
 			return
 		}
@@ -84,9 +81,9 @@ func pendingCertsHandler(svc *certification.Service) http.HandlerFunc {
 	}
 }
 
-func approveCertHandler(svc *certification.Service) http.HandlerFunc {
+func approveCertHandler(svc *certification.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant, actor := tenantAndActor(w, r)
+		tenant, actor := gateTenantActorAndVerb(w, r, authz, policy.VerbCertify, "certification")
 		if tenant == "" {
 			return
 		}
@@ -101,9 +98,9 @@ func approveCertHandler(svc *certification.Service) http.HandlerFunc {
 	}
 }
 
-func rejectCertHandler(svc *certification.Service) http.HandlerFunc {
+func rejectCertHandler(svc *certification.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant, actor := tenantAndActor(w, r)
+		tenant, actor := gateTenantActorAndVerb(w, r, authz, policy.VerbCertify, "certification")
 		if tenant == "" {
 			return
 		}
@@ -118,9 +115,9 @@ func rejectCertHandler(svc *certification.Service) http.HandlerFunc {
 	}
 }
 
-func revokeCertHandler(svc *certification.Service) http.HandlerFunc {
+func revokeCertHandler(svc *certification.Service, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant, actor := tenantAndActor(w, r)
+		tenant, actor := gateTenantActorAndVerb(w, r, authz, policy.VerbCertify, "certification")
 		if tenant == "" {
 			return
 		}

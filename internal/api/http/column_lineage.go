@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/storage/postgres"
 )
 
@@ -14,13 +15,13 @@ type ColumnLineageReader interface {
 	ListByAsset(ctx context.Context, tenantID, assetID string) ([]postgres.ColumnLineageView, error)
 }
 
-func columnLineageHandlers(mux *http.ServeMux, r ColumnLineageReader) {
-	mux.HandleFunc("GET /v1/assets/{id}/column-lineage", listColumnLineageHandler(r))
+func columnLineageHandlers(mux *http.ServeMux, r ColumnLineageReader, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/assets/{id}/column-lineage", listColumnLineageHandler(r, authz))
 }
 
-func listColumnLineageHandler(r ColumnLineageReader) http.HandlerFunc {
+func listColumnLineageHandler(r ColumnLineageReader, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbRead, "asset")
 		if tenant == "" {
 			return
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/deleted"
 	"github.com/Satyaamm/plowered/internal/core/legalhold"
 	"github.com/Satyaamm/plowered/internal/core/pipeline"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/worker"
 )
 
@@ -44,22 +45,22 @@ func validateSchedule(s *pipeline.Schedule) error {
 }
 
 // pipelineHandlers wires pipeline + run endpoints onto mux.
-func pipelineHandlers(mux *http.ServeMux, store pipeline.Repo, enq worker.Enqueuer, tomb deleted.Repo, holds legalhold.Repo) {
-	mux.HandleFunc("GET /v1/pipelines",                listPipelinesHandler(store))
-	mux.HandleFunc("POST /v1/pipelines",               createPipelineHandler(store))
-	mux.HandleFunc("GET /v1/pipelines/{id}",           getPipelineHandler(store))
-	mux.HandleFunc("PATCH /v1/pipelines/{id}",         updatePipelineHandler(store))
-	mux.HandleFunc("DELETE /v1/pipelines/{id}",        deletePipelineHandler(store, tomb, holds))
-	mux.HandleFunc("POST /v1/pipelines/{id}/trigger",  triggerPipelineHandler(store, enq))
+func pipelineHandlers(mux *http.ServeMux, store pipeline.Repo, enq worker.Enqueuer, tomb deleted.Repo, holds legalhold.Repo, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/pipelines",                listPipelinesHandler(store, authz))
+	mux.HandleFunc("POST /v1/pipelines",               createPipelineHandler(store, authz))
+	mux.HandleFunc("GET /v1/pipelines/{id}",           getPipelineHandler(store, authz))
+	mux.HandleFunc("PATCH /v1/pipelines/{id}",         updatePipelineHandler(store, authz))
+	mux.HandleFunc("DELETE /v1/pipelines/{id}",        deletePipelineHandler(store, tomb, holds, authz))
+	mux.HandleFunc("POST /v1/pipelines/{id}/trigger",  triggerPipelineHandler(store, enq, authz))
 
-	mux.HandleFunc("GET /v1/runs",                     listRunsHandler(store))
-	mux.HandleFunc("GET /v1/runs/{id}",                getRunHandler(store))
-	mux.HandleFunc("GET /v1/runs/{id}/tasks",          listTaskRunsHandler(store))
+	mux.HandleFunc("GET /v1/runs",                     listRunsHandler(store, authz))
+	mux.HandleFunc("GET /v1/runs/{id}",                getRunHandler(store, authz))
+	mux.HandleFunc("GET /v1/runs/{id}/tasks",          listTaskRunsHandler(store, authz))
 }
 
-func listPipelinesHandler(s pipeline.Repo) http.HandlerFunc {
+func listPipelinesHandler(s pipeline.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -72,9 +73,9 @@ func listPipelinesHandler(s pipeline.Repo) http.HandlerFunc {
 	}
 }
 
-func createPipelineHandler(s pipeline.Repo) http.HandlerFunc {
+func createPipelineHandler(s pipeline.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbEdit, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -109,9 +110,9 @@ func createPipelineHandler(s pipeline.Repo) http.HandlerFunc {
 	}
 }
 
-func getPipelineHandler(s pipeline.Repo) http.HandlerFunc {
+func getPipelineHandler(s pipeline.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -128,9 +129,9 @@ func getPipelineHandler(s pipeline.Repo) http.HandlerFunc {
 	}
 }
 
-func updatePipelineHandler(s pipeline.Repo) http.HandlerFunc {
+func updatePipelineHandler(s pipeline.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbEdit, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -169,9 +170,9 @@ func updatePipelineHandler(s pipeline.Repo) http.HandlerFunc {
 	}
 }
 
-func deletePipelineHandler(s pipeline.Repo, tomb deleted.Repo, holds legalhold.Repo) http.HandlerFunc {
+func deletePipelineHandler(s pipeline.Repo, tomb deleted.Repo, holds legalhold.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbDelete, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -215,9 +216,9 @@ func pipelineRestorer(s pipeline.Repo) Restorer {
 // triggerPipelineHandler enqueues a Run for an existing pipeline. The
 // handler persists the queued state and dispatches an async job; the
 // worker tier picks it up and drives it to completion.
-func triggerPipelineHandler(s pipeline.Repo, enq worker.Enqueuer) http.HandlerFunc {
+func triggerPipelineHandler(s pipeline.Repo, enq worker.Enqueuer, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRun, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -258,9 +259,9 @@ func triggerPipelineHandler(s pipeline.Repo, enq worker.Enqueuer) http.HandlerFu
 	}
 }
 
-func listRunsHandler(s pipeline.Repo) http.HandlerFunc {
+func listRunsHandler(s pipeline.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -275,9 +276,9 @@ func listRunsHandler(s pipeline.Repo) http.HandlerFunc {
 	}
 }
 
-func getRunHandler(s pipeline.Repo) http.HandlerFunc {
+func getRunHandler(s pipeline.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -290,9 +291,9 @@ func getRunHandler(s pipeline.Repo) http.HandlerFunc {
 	}
 }
 
-func listTaskRunsHandler(s pipeline.Repo) http.HandlerFunc {
+func listTaskRunsHandler(s pipeline.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "pipeline")
 		if tenant == "" {
 			return
 		}

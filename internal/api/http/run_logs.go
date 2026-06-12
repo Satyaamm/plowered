@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Satyaamm/plowered/internal/core/pipeline"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
 // runLogsHandlers registers two endpoints:
@@ -19,9 +20,9 @@ import (
 // Both first verify the caller can see the run (tenant match), then
 // query the LogReader. The SSE endpoint polls every 500ms; switching to
 // a Redis-stream backed pubsub is a future optimisation.
-func runLogsHandlers(mux *http.ServeMux, runs pipeline.Repo, logs pipeline.LogReader) {
-	mux.HandleFunc("GET /v1/runs/{id}/logs", listRunLogsHandler(runs, logs))
-	mux.HandleFunc("GET /v1/runs/{id}/logs/stream", streamRunLogsHandler(runs, logs))
+func runLogsHandlers(mux *http.ServeMux, runs pipeline.Repo, logs pipeline.LogReader, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/runs/{id}/logs", listRunLogsHandler(runs, logs, authz))
+	mux.HandleFunc("GET /v1/runs/{id}/logs/stream", streamRunLogsHandler(runs, logs, authz))
 }
 
 type logLineView struct {
@@ -40,9 +41,9 @@ func toLogView(l pipeline.LogLine) logLineView {
 	}
 }
 
-func listRunLogsHandler(runs pipeline.Repo, logs pipeline.LogReader) http.HandlerFunc {
+func listRunLogsHandler(runs pipeline.Repo, logs pipeline.LogReader, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "pipeline")
 		if tenant == "" {
 			return
 		}
@@ -70,9 +71,9 @@ func listRunLogsHandler(runs pipeline.Repo, logs pipeline.LogReader) http.Handle
 // payload on a `data:` field; the SSE last-event-id semantics are
 // implemented via the `id:` field so a browser auto-reconnect resumes
 // from the right cursor.
-func streamRunLogsHandler(runs pipeline.Repo, logs pipeline.LogReader) http.HandlerFunc {
+func streamRunLogsHandler(runs pipeline.Repo, logs pipeline.LogReader, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbRead, "pipeline")
 		if tenant == "" {
 			return
 		}

@@ -38,7 +38,26 @@ func mountMCP(mux *http.ServeMux, d Deps) {
 	}
 
 	transport := pkgmcp.NewHTTPTransport(server)
-	mux.Handle("POST /v1/mcp", attachPrincipal(transport))
+	// Use the same engine instance the tool handlers already consult so
+	// the HTTP-level gate and the per-tool authz stay coherent. Anyone
+	// the engine grants VerbRead on assets is allowed to open an MCP
+	// session; individual tool calls still pass through deps.Auth.
+	engine := deps.Auth
+	if engine == nil {
+		engine = policy.NewEngine(nil)
+	}
+	mux.Handle("POST /v1/mcp", attachPrincipal(gateMCP(engine, transport)))
+}
+
+// gateMCP is the HTTP-level RBAC checkpoint for the MCP transport.
+// Split out from mountMCP so the gate is unit-testable.
+func gateMCP(authz policy.Authorizer, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !gate(w, r, authz, policy.VerbRead, "asset") {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // attachPrincipal copies the authenticated auth.Principal onto the MCP

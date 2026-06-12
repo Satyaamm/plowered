@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/Satyaamm/plowered/internal/core/graph"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/storage"
 )
 
@@ -27,8 +28,14 @@ type LineageEdgeView struct {
 	Kind   string `json:"kind"`
 }
 
-func lineageHandler(store storage.Store) http.HandlerFunc {
+func lineageHandler(store storage.Store, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Lineage is rendered to anyone with read on assets — same
+		// surface as /v1/assets/{id}. Reuse the asset resource type so a
+		// per-asset deny rule covers both shapes.
+		if !gate(w, r, authz, policy.VerbRead, "asset") {
+			return
+		}
 		id := r.PathValue("id")
 		direction := r.URL.Query().Get("direction")
 		if direction == "" {

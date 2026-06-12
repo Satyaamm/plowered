@@ -22,16 +22,16 @@ type Restorer func(ctx context.Context, r *deleted.Record) error
 // deletedHandlers wires the recycle-bin endpoints onto mux. The
 // restorers map is owned by the caller because each domain decides what
 // "restore" means — usually re-INSERT the payload into the source table.
-func deletedHandlers(mux *http.ServeMux, repo deleted.Repo, restorers map[string]Restorer) {
-	mux.HandleFunc("GET /v1/deleted",                listDeletedHandler(repo))
-	mux.HandleFunc("GET /v1/deleted/{id}",           getDeletedHandler(repo))
-	mux.HandleFunc("POST /v1/deleted/{id}/restore",  restoreDeletedHandler(repo, restorers))
-	mux.HandleFunc("DELETE /v1/deleted/{id}",        purgeDeletedHandler(repo))
+func deletedHandlers(mux *http.ServeMux, repo deleted.Repo, restorers map[string]Restorer, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/deleted",                listDeletedHandler(repo, authz))
+	mux.HandleFunc("GET /v1/deleted/{id}",           getDeletedHandler(repo, authz))
+	mux.HandleFunc("POST /v1/deleted/{id}/restore",  restoreDeletedHandler(repo, restorers, authz))
+	mux.HandleFunc("DELETE /v1/deleted/{id}",        purgeDeletedHandler(repo, authz))
 }
 
-func listDeletedHandler(repo deleted.Repo) http.HandlerFunc {
+func listDeletedHandler(repo deleted.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "recycle_bin_entry")
 		if tenant == "" {
 			return
 		}
@@ -51,9 +51,9 @@ func listDeletedHandler(repo deleted.Repo) http.HandlerFunc {
 	}
 }
 
-func getDeletedHandler(repo deleted.Repo) http.HandlerFunc {
+func getDeletedHandler(repo deleted.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "recycle_bin_entry")
 		if tenant == "" {
 			return
 		}
@@ -66,9 +66,9 @@ func getDeletedHandler(repo deleted.Repo) http.HandlerFunc {
 	}
 }
 
-func restoreDeletedHandler(repo deleted.Repo, restorers map[string]Restorer) http.HandlerFunc {
+func restoreDeletedHandler(repo deleted.Repo, restorers map[string]Restorer, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "recycle_bin_entry")
 		if tenant == "" {
 			return
 		}
@@ -100,21 +100,17 @@ func restoreDeletedHandler(repo deleted.Repo, restorers map[string]Restorer) htt
 	}
 }
 
-// purgeDeletedHandler permanently removes a tombstone. The handler ENFORCES
-// the super_admin role inline — defense in depth on top of the policy
-// engine, since this is a destructive, non-reversible action.
-func purgeDeletedHandler(repo deleted.Repo) http.HandlerFunc {
+// purgeDeletedHandler permanently removes a tombstone. The engine's
+// role-grant matrix already restricts VerbPurge to super_admin
+// (policy.go:124), so the gate alone is sufficient — no second inline
+// check needed.
+func purgeDeletedHandler(repo deleted.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbPurge, "recycle_bin_entry")
 		if tenant == "" {
 			return
 		}
 		p, _ := auth.PrincipalFromContext(r.Context())
-		if !policy.HasRole(p, "super_admin") {
-			writeJSON(w, http.StatusForbidden, errorBody{"forbidden",
-				"only super_admin can permanently delete a tombstone"})
-			return
-		}
 		id := r.PathValue("id")
 		if err := repo.MarkPurged(r.Context(), tenant, id, p.ID, time.Now().UTC()); err != nil {
 			writeJSON(w, http.StatusNotFound, errorBody{"not_found", err.Error()})

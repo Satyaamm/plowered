@@ -8,6 +8,7 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/aiprovider"
 	"github.com/Satyaamm/plowered/internal/core/describer"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
 // Describer is the small surface the HTTP layer needs from the
@@ -17,16 +18,18 @@ type Describer interface {
 	Suggest(ctx context.Context, tenantID, assetID, generatedBy string) (*describer.Suggestion, error)
 }
 
-func describeHandlers(mux *http.ServeMux, d Describer) {
+func describeHandlers(mux *http.ServeMux, d Describer, authz policy.Authorizer) {
 	if d == nil {
 		return
 	}
-	mux.HandleFunc("POST /v1/assets/{id}/describe:ai", describeAssetHandler(d))
+	mux.HandleFunc("POST /v1/assets/{id}/describe:ai", describeAssetHandler(d, authz))
 }
 
-func describeAssetHandler(d Describer) http.HandlerFunc {
+func describeAssetHandler(d Describer, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Burns LLM tokens against the tenant's BYOM key; mutates asset
+		// metadata once accepted. Editor+.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbEdit, "asset")
 		if tenant == "" {
 			return
 		}

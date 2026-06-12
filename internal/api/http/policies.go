@@ -9,15 +9,16 @@ import (
 	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
-func policyHandlers(mux *http.ServeMux, store policy.RuleRepo, tomb deleted.Repo, holds legalhold.Repo) {
-	mux.HandleFunc("GET /v1/policies",            listPoliciesHandler(store))
-	mux.HandleFunc("POST /v1/policies",           createPolicyHandler(store))
-	mux.HandleFunc("DELETE /v1/policies/{id}",    deletePolicyHandler(store, tomb, holds))
+func policyHandlers(mux *http.ServeMux, store policy.RuleRepo, tomb deleted.Repo, holds legalhold.Repo, authz policy.Authorizer) {
+	mux.HandleFunc("GET /v1/policies",            listPoliciesHandler(store, authz))
+	mux.HandleFunc("POST /v1/policies",           createPolicyHandler(store, authz))
+	mux.HandleFunc("DELETE /v1/policies/{id}",    deletePolicyHandler(store, tomb, holds, authz))
 }
 
-func listPoliciesHandler(s policy.RuleRepo) http.HandlerFunc {
+func listPoliciesHandler(s policy.RuleRepo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Policy rules ARE access control — only admins should read them.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "policy_rule")
 		if tenant == "" {
 			return
 		}
@@ -25,9 +26,9 @@ func listPoliciesHandler(s policy.RuleRepo) http.HandlerFunc {
 	}
 }
 
-func createPolicyHandler(s policy.RuleRepo) http.HandlerFunc {
+func createPolicyHandler(s policy.RuleRepo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "policy_rule")
 		if tenant == "" {
 			return
 		}
@@ -46,9 +47,9 @@ func createPolicyHandler(s policy.RuleRepo) http.HandlerFunc {
 	}
 }
 
-func deletePolicyHandler(s policy.RuleRepo, tomb deleted.Repo, holds legalhold.Repo) http.HandlerFunc {
+func deletePolicyHandler(s policy.RuleRepo, tomb deleted.Repo, holds legalhold.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "policy_rule")
 		if tenant == "" {
 			return
 		}

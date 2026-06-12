@@ -16,11 +16,11 @@ import (
 // The work itself — building the access/portability bundle, performing
 // the erasure — happens out-of-band: a worker reads received requests
 // and writes back artifact_urn + status. We expose the queue here.
-func dsrHandlers(mux *http.ServeMux, repo dsr.Repo) {
-	mux.HandleFunc("POST /v1/dsr",                 createDSRHandler(repo))
-	mux.HandleFunc("GET /v1/dsr",                  listDSRHandler(repo))
-	mux.HandleFunc("GET /v1/dsr/{id}",             getDSRHandler(repo))
-	mux.HandleFunc("PATCH /v1/dsr/{id}/status",    updateDSRStatusHandler(repo))
+func dsrHandlers(mux *http.ServeMux, repo dsr.Repo, authz policy.Authorizer) {
+	mux.HandleFunc("POST /v1/dsr",                 createDSRHandler(repo, authz))
+	mux.HandleFunc("GET /v1/dsr",                  listDSRHandler(repo, authz))
+	mux.HandleFunc("GET /v1/dsr/{id}",             getDSRHandler(repo, authz))
+	mux.HandleFunc("PATCH /v1/dsr/{id}/status",    updateDSRStatusHandler(repo, authz))
 }
 
 // createDSRRequest is the POST body. We accept just enough to start the
@@ -31,9 +31,12 @@ type createDSRRequest struct {
 	Notes     string `json:"notes,omitempty"`
 }
 
-func createDSRHandler(repo dsr.Repo) http.HandlerFunc {
+func createDSRHandler(repo dsr.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		// Filing a DSR on behalf of a subject is a privileged operator
+		// action — DPO/admin only. End-users hit the self-service GDPR
+		// endpoints under /v1/account/* which don't require admin.
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "dsr_request")
 		if tenant == "" {
 			return
 		}
@@ -66,9 +69,9 @@ func createDSRHandler(repo dsr.Repo) http.HandlerFunc {
 	}
 }
 
-func listDSRHandler(repo dsr.Repo) http.HandlerFunc {
+func listDSRHandler(repo dsr.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "dsr_request")
 		if tenant == "" {
 			return
 		}
@@ -81,9 +84,9 @@ func listDSRHandler(repo dsr.Repo) http.HandlerFunc {
 	}
 }
 
-func getDSRHandler(repo dsr.Repo) http.HandlerFunc {
+func getDSRHandler(repo dsr.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "dsr_request")
 		if tenant == "" {
 			return
 		}
@@ -103,19 +106,13 @@ type updateDSRStatusRequest struct {
 	Notes       string `json:"notes,omitempty"`
 }
 
-func updateDSRStatusHandler(repo dsr.Repo) http.HandlerFunc {
+func updateDSRStatusHandler(repo dsr.Repo, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, authz, policy.VerbAdmin, "dsr_request")
 		if tenant == "" {
 			return
 		}
 		p, _ := auth.PrincipalFromContext(r.Context())
-		// Status changes are an operator action — DPO/admin only.
-		if !policy.HasRole(p, "admin") && !policy.HasRole(p, "super_admin") {
-			writeJSON(w, http.StatusForbidden, errorBody{"forbidden",
-				"only admin/super_admin can change DSR status"})
-			return
-		}
 		var body updateDSRStatusRequest
 		if err := decodeJSON(r, &body); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorBody{"bad_request", err.Error()})

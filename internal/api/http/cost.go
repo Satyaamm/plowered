@@ -7,23 +7,24 @@ import (
 	"time"
 
 	"github.com/Satyaamm/plowered/internal/core/cost"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 )
 
-func costHandlers(mux *http.ServeMux, r cost.Reader, b cost.BudgetStore) {
+func costHandlers(mux *http.ServeMux, r cost.Reader, b cost.BudgetStore, authz policy.Authorizer) {
 	if r == nil {
 		return
 	}
-	mux.HandleFunc("GET /v1/cost/recent",  recentCostHandler(r))
-	mux.HandleFunc("GET /v1/cost/summary", summaryCostHandler(r))
+	mux.HandleFunc("GET /v1/cost/recent",  recentCostHandler(r, authz))
+	mux.HandleFunc("GET /v1/cost/summary", summaryCostHandler(r, authz))
 	if b != nil {
-		mux.HandleFunc("GET  /v1/cost/budget", getBudgetHandler(b))
-		mux.HandleFunc("POST /v1/cost/budget", upsertBudgetHandler(b))
+		mux.HandleFunc("GET  /v1/cost/budget", getBudgetHandler(b, authz))
+		mux.HandleFunc("POST /v1/cost/budget", upsertBudgetHandler(b, authz))
 	}
 }
 
-func recentCostHandler(r cost.Reader) http.HandlerFunc {
+func recentCostHandler(r cost.Reader, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbRead, "cost_budget")
 		if tenant == "" {
 			return
 		}
@@ -37,9 +38,9 @@ func recentCostHandler(r cost.Reader) http.HandlerFunc {
 	}
 }
 
-func summaryCostHandler(r cost.Reader) http.HandlerFunc {
+func summaryCostHandler(r cost.Reader, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbRead, "cost_budget")
 		if tenant == "" {
 			return
 		}
@@ -90,9 +91,9 @@ type budgetReq struct {
 	HardAtPct  int      `json:"hard_at_pct"`
 }
 
-func getBudgetHandler(s cost.BudgetStore) http.HandlerFunc {
+func getBudgetHandler(s cost.BudgetStore, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbRead, "cost_budget")
 		if tenant == "" {
 			return
 		}
@@ -105,9 +106,9 @@ func getBudgetHandler(s cost.BudgetStore) http.HandlerFunc {
 	}
 }
 
-func upsertBudgetHandler(s cost.BudgetStore) http.HandlerFunc {
+func upsertBudgetHandler(s cost.BudgetStore, authz policy.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		tenant := mustTenant(w, req)
+		tenant := gateTenantAndVerb(w, req, authz, policy.VerbAdmin, "cost_budget")
 		if tenant == "" {
 			return
 		}

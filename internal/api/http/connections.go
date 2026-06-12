@@ -7,17 +7,21 @@ import (
 
 	"github.com/Satyaamm/plowered/internal/core/auth"
 	"github.com/Satyaamm/plowered/internal/core/connection"
+	"github.com/Satyaamm/plowered/internal/core/policy"
 	"github.com/Satyaamm/plowered/internal/core/secrets"
 	"github.com/Satyaamm/plowered/internal/worker"
 )
 
 // ConnectionDeps groups what the connection routes need beyond the
-// connection.Repo: the secrets vault and the per-Type tester registry.
+// connection.Repo: the secrets vault, the per-Type tester registry, and
+// the policy.Authorizer that gates mutations. Credentials live on every
+// connection row, so write paths require VerbAdmin.
 type ConnectionDeps struct {
 	Connections connection.Repo
 	Vault       secrets.Vault
 	Registry    *connection.Registry
 	Enqueuer    worker.Enqueuer
+	Authorizer  policy.Authorizer
 }
 
 // connectionHandlers registers /v1/connections endpoints. CRUD is
@@ -42,7 +46,7 @@ func connectionHandlers(mux *http.ServeMux, d ConnectionDeps) {
 // polls /v1/connections to see the catalog grow.
 func crawlConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "connection")
 		if tenant == "" {
 			return
 		}
@@ -114,7 +118,7 @@ type createConnectionRequest struct {
 
 func listConnectionsHandler(d ConnectionDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbRead, "connection")
 		if tenant == "" {
 			return
 		}
@@ -133,7 +137,7 @@ func listConnectionsHandler(d ConnectionDeps) http.HandlerFunc {
 
 func createConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "connection")
 		if tenant == "" {
 			return
 		}
@@ -188,7 +192,7 @@ func createConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 
 func getConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbRead, "connection")
 		if tenant == "" {
 			return
 		}
@@ -210,7 +214,7 @@ type updateConnectionRequest struct {
 
 func updateConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "connection")
 		if tenant == "" {
 			return
 		}
@@ -248,7 +252,7 @@ func updateConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 
 func deleteConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbDelete, "connection")
 		if tenant == "" {
 			return
 		}
@@ -273,7 +277,7 @@ func deleteConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 // drives the handshake. The DB is never touched.
 func testDraftConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "connection")
 		if tenant == "" {
 			return
 		}
@@ -312,7 +316,7 @@ func testDraftConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 
 func testConnectionHandler(d ConnectionDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant := mustTenant(w, r)
+		tenant := gateTenantAndVerb(w, r, d.Authorizer, policy.VerbAdmin, "connection")
 		if tenant == "" {
 			return
 		}
