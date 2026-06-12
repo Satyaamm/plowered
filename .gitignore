@@ -49,6 +49,8 @@ node_modules/
 out/
 .pnpm-store/
 .turbo/
+tsconfig.tsbuildinfo
+**/tsconfig.tsbuildinfo
 web/.env
 web/.env.local
 web/.env.*.local

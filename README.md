@@ -24,7 +24,7 @@ single-binary, BYO-LLM.
 | **MCP** | Native Model Context Protocol server (`cmd/plowered-mcp`) so any MCP-aware agent can read the catalog under your policy engine |
 | **Rate limiting** | Per-IP token bucket on auth endpoints + per-principal limiter on the authenticated API (120 read / 30 write / min). RFC 9239 `RateLimit-Limit / Remaining / Reset` headers everywhere |
 | **Security headers** | HSTS, strict CSP, `X-Frame-Options: DENY`, Referrer-Policy, Permissions-Policy lockdown, COOP + CORP — set globally by `SecurityHeadersMW` |
-| **Compliance** | Legal holds, admin DSR + self-service GDPR (Art. 15/17/20), audit trail, recycle bin. See `COMPLIANCE.md` for the SOC 2 / GDPR / HIPAA control matrix |
+| **Compliance** | Legal holds, admin DSR + self-service GDPR (Art. 15/17/20), audit trail, recycle bin |
 | **API** | REST + JSON over `/v1/*`. OpenAPI 3.1 spec served at `/openapi.yaml` and Swagger UI at `/docs` |
 
 ## Tech stack
@@ -191,9 +191,6 @@ ledger lives in the `jobs` Postgres table; the executor side runs on Asynq.
 - **Rate-limit headers**: every limited endpoint emits `RateLimit-Limit`,
   `RateLimit-Remaining`, `RateLimit-Reset` per IETF draft RFC 9239.
 
-See [`COMPLIANCE.md`](COMPLIANCE.md) for the full SOC 2 / GDPR / HIPAA
-control matrix and the honest gap list.
-
 ## Tests
 
 ```bash
@@ -226,7 +223,7 @@ Security + compliance pass (SOC 2 / GDPR / HIPAA prep):
 5. Bookmarkable `/jobs/{id}` detail page with progress bar + status badge
 6. `SecurityHeadersMW` — HSTS, strict CSP, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, COOP + CORP globally
 7. GDPR self-service: `GET /v1/account/export` (Art. 15 / 20), `DELETE /v1/account?confirm=true` (Art. 17 pseudonymisation)
-8. `COMPLIANCE.md` updated with the new controls and a real gap document
+8. New controls (legal holds, DSR, audit recycle bin) wired into the policy engine
 
 Six-session "complete everything" arc (2026-05 closeout):
 
